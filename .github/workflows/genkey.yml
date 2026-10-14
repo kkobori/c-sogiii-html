@@ -1,0 +1,24 @@
+name: Generate signing key (one time)
+on: workflow_dispatch
+jobs:
+  genkey:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - name: Create keystore
+        env:
+          RELEASE_PASSWORD: ${{ secrets.RELEASE_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then echo "::error::KEYSTORE_BASE64 は既に設定済みです。上書き防止のため中止"; exit 1; fi
+          if [ ${#RELEASE_PASSWORD} -lt 8 ]; then echo "::error::先にSecret RELEASE_PASSWORD(8文字以上)を登録してください"; exit 1; fi
+          keytool -genkeypair -keystore release.keystore -alias hspapp -keyalg RSA -keysize 2048 -validity 36500 \
+            -storepass "$RELEASE_PASSWORD" -keypass "$RELEASE_PASSWORD" -dname "CN=hsp app"
+          base64 -w0 release.keystore > keystore_base64.txt
+          keytool -list -keystore release.keystore -storepass "$RELEASE_PASSWORD" | head -8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keystore-base64
+          path: keystore_base64.txt
+          retention-days: 1

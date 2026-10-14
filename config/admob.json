@@ -1,0 +1,8 @@
+{
+  "appId": "",
+  "reward": "",
+  "testing": true,
+  "testDevices": [],
+  "cooldownMinutes": 3,
+  "debugToast": false
+}

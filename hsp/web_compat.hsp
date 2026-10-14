@@ -1,0 +1,46 @@
+; Web(公式hsp3dish.js)用の互換定義。ビルド時に web_patch.sh が main.hsp から自動で読み込ませる。
+; スクリプト内の "case PLATFORM_wwwWEBGL" を、公式Webの getreq SYSREQ_PLATFORM (=3) に一致させる。
+#const global PLATFORM_wwwWEBGL 3
+#const global PLATFORM_wwwANDROID 102
+
+; MML(::mmlt::) 用の包み。JS側(mml-engine.js)が devcontrol で受ける。
+; JS側が担当するチャンネルなら 0 を返して処理済み、担当外(-1)なら公式の mm 命令へ回す。
+; JS側が無い(devcontrolが-1を返す)場合も、そのまま公式の命令になる。
+#module "webmm"
+#deffunc mmloadx str f, int n, int o
+	; 文字列の加工はせず、そのままJS側へ渡す(JS側が "::mmlt::" かを判定。MMLなら 0、違えば -1)
+	devcontrol "mml_load:"+f, n, o
+	if stat=0 : return
+	devcontrol "mml_drop", n        ; このチャンネルがMML用だったら解放(担当外なら何も起きない)
+	mmloadsafe f, n, o              ; MML(::mmlt::)でJS側が無い場合は、ファイルが無いので無音で読み飛ばされる
+	return
+#deffunc mmplayx int n
+	devcontrol "mml_play", n
+	if stat=0 : return
+	mmplay n
+	return
+#deffunc mmstopx int n
+	devcontrol "mml_stop", n
+	if stat=0 : return
+	mmstop n
+	return
+#deffunc mmstopall
+	devcontrol "mml_stopall"        ; MMLの全チャンネルを一時停止(位置は保存)
+	mmstop                          ; 公式側(mp3/wav)も全停止
+	return
+#deffunc mmvolx int n, int v
+	devcontrol "mml_vol", n, v
+	if stat=0 : return
+	mmvol n, v
+	return
+#global
+
+; 広告表示の前後で、公式側(mp3/wav)の音も一時停止→続きから再開する(C++側の snd_adpause / snd_adresume)
+#module "webad"
+#deffunc admobshow16web local r
+	devcontrol "snd_adpause"
+	admobshow16
+	r=stat
+	devcontrol "snd_adresume"
+	return r
+#global

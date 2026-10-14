@@ -1,0 +1,92 @@
+name: build-android-hsp
+on:
+  workflow_dispatch:
+  push:
+    paths: ['hsp/**', 'config/**', 'android/**', 'tools/**', '.github/workflows/android.yml']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: Install Android NDK / platform (runner's preinstalled SDK)
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          echo "sdkmanager: $SDKM"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "ndk;26.3.11579264" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.0"
+      - name: Build options (config/app.json)
+        run: |
+          ALL=$(python3 -c "import json;print('1' if json.load(open('config/app.json')).get('allFilesAccess') else '0')" 2>/dev/null || echo 0)
+          echo "ALLFILES=$ALL" >> "$GITHUB_ENV"
+          echo "共有ストレージ版(allFilesAccess): $ALL"
+      - name: Build official HSP tools (hspcmp / hsp3cnv)
+        run: ./tools/build_hsp_tools.sh ./hsptools
+      - name: HSP script -> C++ (same as HSP3Dish Helper)
+        working-directory: hsp
+        run: |
+          MAIN=$(python3 -c "import json,os;print(json.load(open('../config/app.json')).get('mainScript','main.hsp'))" 2>/dev/null || echo main.hsp)
+          echo "メインスクリプト: $MAIN"
+          if [ "$MAIN" != "main.hsp" ]; then cp "$MAIN" main.hsp; fi
+          KEEP_DEBUGONOFF=$ALLFILES bash ../tools/native_patch.sh .
+          ../hsptools/hspcmp -i -u --compath=../hsptools/common/ main.hsp
+          ../hsptools/hsp3cnv -d main
+          echo "BUILD main.hsp blob=$(git hash-object main.hsp.orig) lines=$(wc -l < main.hsp.orig) commit=$GITHUB_SHA"
+          python3 ../tools/add_trace.py main.cpp
+          cp main.cpp ../android/app/jni/hsp3embed/hspsource.cpp
+      - name: AdMob config
+        run: |
+          if [ -f config/admob.json ]; then
+            cp config/admob.json android/app/admob.json
+            mkdir -p android/app/src/main/assets
+            cp config/admob.json android/app/src/main/assets/admob.json
+            echo "AdMob設定を取り込みました"
+          else
+            echo "config/admob.json なし: Googleのテスト広告ID"
+          fi
+      - name: App icon
+        run: |
+          if [ -d config/icon ]; then
+            for d in ldpi mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+              if [ -f config/icon/$d.png ]; then
+                cp config/icon/$d.png android/app/src/main/res/drawable-$d/ic_launcher.png
+              fi
+            done
+            echo "icon replaced"
+          else
+            echo "no config/icon: default icon"
+          fi
+      - name: Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          RELEASE_PASSWORD: ${{ secrets.RELEASE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+            echo "RELEASE_PASSWORD=$RELEASE_PASSWORD" >> "$GITHUB_ENV"
+          else
+            echo "::warning::KEYSTORE_BASE64 未設定: テスト用の使い捨て鍵で署名します(配布不可)"
+            keytool -genkeypair -keystore android/app/release.keystore -alias hspapp -keyalg RSA -keysize 2048 -validity 10000 -storepass testpass123 -keypass testpass123 -dname "CN=test"
+            echo "RELEASE_PASSWORD=testpass123" >> "$GITHUB_ENV"
+          fi
+      - name: Gradle (apk + aab)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          if [ "$ALLFILES" = "1" ]; then
+            # 共有ストレージ版: apk にだけ MANAGE_EXTERNAL_STORAGE を付ける(aab には付けない)
+            python3 ../tools/manifest_perm.py add app/src/main/AndroidManifest.xml
+            ./gradlew assembleRelease --no-daemon
+            python3 ../tools/manifest_perm.py remove app/src/main/AndroidManifest.xml
+            ./gradlew bundleRelease --no-daemon
+          else
+            ./gradlew assembleRelease bundleRelease --no-daemon
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hsp-android
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/bundle/release/*.aab

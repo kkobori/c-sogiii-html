@@ -1,0 +1,35 @@
+; ネイティブ(本家ランタイム)用の互換モジュール。ビルド時に main.hsp から自動で読み込まれる。
+; 本家の mmload は、ファイルが無いとエラーで止まるため、存在を確認してから読み込む。
+#module "nativecompat"
+#deffunc mmloadsafe str f, int n, int o
+	exist f
+	if strsize < 0 : return
+	mmload f, n, o
+	return
+#global
+
+; 実行環境の拡張getreq ID (本家ランタイム側 sysreq.h と同じ値)
+#ifndef SYSREQ_BACKBUTTON
+#define global SYSREQ_AD_STATUS 1000
+#define global SYSREQ_AD_LASTTIME 1001
+#define global SYSREQ_AD_LASTERROR 1002
+#define global SYSREQ_AD_CANREQUEST 1003
+#define global SYSREQ_BACKBUTTON 1004
+#endif
+
+; devcontrol "AdMob",16 の代わり。表示を開始し、結果が出るまで待つ(ミニインタプリタと同じ挙動)
+; stat: 1=報酬獲得 / -1=失敗・未準備・報酬なし / -2=クールダウン中
+#module "nativead"
+#deffunc admobshow16 local r
+	devcontrol "AdMob",16
+	r=stat
+	if r!0 : return r
+	repeat 6000
+		await 50
+		devcontrol "AdMob",19
+		r=stat
+		if r!2 : break
+	loop
+	if r=2 : r=-1
+	return r
+#global

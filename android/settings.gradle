@@ -1,0 +1,2 @@
+rootProject.name = "hspproj"
+include ':app'

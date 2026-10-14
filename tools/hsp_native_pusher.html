@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HSP Native Pusher</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root{--bg:#10141a;--card:#1a212b;--fg:#e8edf3;--mut:#93a1b3;--acc:#4da3ff;--ok:#5fd38d;--ng:#ff6b6b;--bd:#2c3745}
+@media (prefers-color-scheme: light){:root{--bg:#f4f6f9;--card:#fff;--fg:#17202b;--mut:#5b6b7d;--acc:#0a66d8;--ok:#117a3c;--ng:#c62828;--bd:#d5dce5}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;padding:12px 16px 80px}
+h1{font-size:18px;margin:6px 0 12px}
+details{background:var(--card);border:1px solid var(--bd);border-radius:10px;margin:10px 0;padding:0}
+summary{padding:12px 14px;font-weight:600;cursor:pointer}
+.in{padding:0 14px 14px}
+label{display:block;margin:10px 0 3px;color:var(--mut);font-size:13px}
+input[type=text],input[type=password],input[type=number],select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);font:inherit}
+textarea{min-height:60px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chk{display:flex;gap:8px;align-items:center;margin:8px 0;color:var(--fg);font-size:14px}
+button{padding:12px 16px;border:0;border-radius:10px;background:var(--acc);color:#fff;font:inherit;font-weight:600;margin:6px 6px 0 0}
+button.sub{background:transparent;color:var(--acc);border:1px solid var(--acc)}
+button:disabled{opacity:.5}
+#log{white-space:pre-wrap;background:#0b0f14;color:#b8f5c8;font:12px/1.5 ui-monospace,Menlo,monospace;padding:10px;border-radius:10px;max-height:46vh;overflow:auto;margin-top:12px;word-break:break-all}
+.hint{color:var(--mut);font-size:12px;margin:4px 0}
+.files{font-size:13px;color:var(--mut);margin-top:4px}
+a{color:var(--acc)}
+</style>
+</head>
+<body>
+<h1>HSP Native Pusher</h1>
+
+<details open><summary>① GitHub</summary><div class="in">
+  <label>アクセストークン (repo と workflow 権限)</label>
+  <input type="password" id="pat" autocomplete="off" placeholder="ghp_… / github_pat_…">
+  <label>owner</label><input type="text" id="owner" autocapitalize="off" autocomplete="off">
+  <label>repo</label><input type="text" id="repo" autocapitalize="off" autocomplete="off">
+  <div class="hint">トークンはこの端末のブラウザ内にだけ保存されます。送信先は api.github.com のみです。</div>
+  <button class="sub" id="btnLoadCfg">リポジトリの設定を読み込む</button>
+</div></details>
+
+<details open><summary>② アプリ設定</summary><div class="in">
+  <label>パッケージ名 (変更すると別アプリ扱い=保存データは引き継がれません)</label>
+  <input type="text" id="packageName" autocapitalize="off" autocomplete="off" placeholder="tv.hsp.hspproj">
+  <label>アプリ名</label><input type="text" id="appName" placeholder="hspproj">
+  <div class="row"><div style="flex:1"><label>versionCode (整数。更新ごとに増やす)</label><input type="number" id="versionCode" min="1" value="1"></div>
+  <div style="flex:1"><label>versionName</label><input type="text" id="versionName" value="1.0"></div></div>
+  <label>アイコン画像 (PNG/JPG。正方形・512px以上推奨。選ばなければ今のアイコンのまま)</label>
+  <input type="file" id="iconFile" accept="image/png,image/jpeg">
+  <div class="files" id="iconInfo"></div><img id="iconPrev" alt="" style="display:none;width:72px;height:72px;border-radius:14px;margin-top:6px">
+  <label>画面の向き</label>
+  <select id="orientation"><option value="portrait">縦固定</option><option value="landscape">横固定</option><option value="sensorLandscape">横(左右自動)</option><option value="fullSensor">自動回転</option></select>
+  <label class="chk" style="margin-top:12px"><input type="checkbox" id="allFilesAccess"> 共有ストレージ版 (apk専用): 「すべてのファイルへのアクセス」権限を付け、保存先を /storage/emulated/0/ のまま残す</label>
+  <div class="hint">ONにすると、apkにだけ MANAGE_EXTERNAL_STORAGE が付きます(aabには付きません)。このaabはPlayストアに出せません。sogmake のような、共有フォルダを直接読み書きするアプリ用です。初回起動時に許可の案内が出ます。</div>
+</div></details>
+
+<details><summary>③ 広告 (AdMob リワード)</summary><div class="in">
+  <label>AdMob アプリID (ca-app-pub-…~…)</label><input type="text" id="adAppId" autocapitalize="off" autocomplete="off">
+  <label>リワード広告ユニットID (ca-app-pub-…/…)</label><input type="text" id="adReward" autocapitalize="off" autocomplete="off">
+  <div class="hint">空欄ならGoogleのテストIDで動きます。本番IDで試す前に、自分の端末をテストデバイスに登録してください。</div>
+  <label>テストデバイスID (1行に1つ)</label><textarea id="adDevices"></textarea>
+  <div class="row"><div style="flex:1"><label>クールダウン(分)</label><input type="number" id="adCooldown" min="0" value="3"></div></div>
+  <label class="chk"><input type="checkbox" id="adTesting" checked> テスト広告を使う(ON=Googleのテスト広告。公開用はOFFにして上の本番IDを入れる)</label>
+  <div class="hint" id="adTestHint"></div>
+  <label class="chk"><input type="checkbox" id="adDebug" checked> 広告エラーを画面に表示する(確認が済んだらOFF)</label>
+</div></details>
+
+<details open><summary>④ ファイル</summary><div class="in">
+  <label>プロジェクトZIP (hsp-native-ci.zip など。中身を丸ごとリポジトリに反映。省略可)</label>
+  <input type="file" id="projZip" accept=".zip">
+  <div class="hint">更新されたzipを受け取ったときは、ここに選んで「反映してビルド」を押します。変更があったファイルだけが送られます。</div>
+  <div class="files" id="projList"></div>
+  <label>メインスクリプトのファイル名 (ビルドの起点。例: main.hsp / sogiii.hsp)</label>
+  <input type="text" id="mainScript" autocapitalize="off" autocomplete="off" placeholder="main.hsp">
+  <label>HSPスクリプト (複数可。メイン以外の #include されるファイルも一緒に)</label>
+  <input type="file" id="hspFiles" accept=".hsp,.as,.txt" multiple>
+  <div class="files" id="hspList"></div>
+  <label>素材ZIP (gdata など。中身を assets/ に置きます。省略可)</label>
+  <input type="file" id="assetZip" accept=".zip">
+  <div class="hint">ZIP内のパスがそのまま assets/ 以下になります (例: gdata/bgm/dan.txt)。「assets/」で始まる場合はその分を除きます。</div>
+  <div class="files" id="zipList"></div>
+</div></details>
+
+<div>
+  <button id="btnGo">反映してビルド → apk/aab を取得</button>
+  <button class="sub" id="btnLast">最新の実行の結果を見る</button>
+</div>
+<div id="log"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const K = 'hsp_native_pusher_v1';
+const FIELDS = ['mainScript','pat','owner','repo','packageName','appName','versionCode','versionName','orientation','adAppId','adReward','adDevices','adCooldown'];
+
+function logLine(s){ const e=$('log'); e.textContent += '['+new Date().toLocaleTimeString()+'] '+s+'\n'; e.scrollTop=e.scrollHeight; }
+function save(){ try{ const o={}; FIELDS.forEach(f=>o[f]=$(f).value); o.adDebug=$('adDebug').checked; o.adTesting=$('adTesting').checked; o.allFilesAccess=$('allFilesAccess').checked; localStorage.setItem(K,JSON.stringify(o)); }catch(e){} }
+function load(){ try{ const o=JSON.parse(localStorage.getItem(K)||'{}'); FIELDS.forEach(f=>{ if(o[f]!=null) $(f).value=o[f]; }); if(o.adDebug!=null) $('adDebug').checked=o.adDebug; if(o.allFilesAccess!=null) $('allFilesAccess').checked=!!o.allFilesAccess; if(o.adTesting!=null) $('adTesting').checked=o.adTesting; }catch(e){} }
+document.addEventListener('input', save); document.addEventListener('change', save);
+load();
+
+// ---- 設定 → JSON ----
+function appJson(){
+  return { packageName:$('packageName').value.trim()||'tv.hsp.hspproj', appName:$('appName').value.trim()||'hspproj',
+    versionCode:Math.max(1,parseInt($('versionCode').value,10)||1), versionName:$('versionName').value.trim()||'1.0',
+    orientation:$('orientation').value, mainScript:($('mainScript').value.trim()||'main.hsp'), allFilesAccess:$('allFilesAccess').checked };
+}
+function adJson(){
+  const devs=$('adDevices').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  return { appId:$('adAppId').value.trim(), reward:$('adReward').value.trim(), testing:$('adTesting').checked, testDevices:devs,
+    cooldownMinutes:Math.max(0,parseInt($('adCooldown').value,10)||0), debugToast:$('adDebug').checked };
+}
+function validate(){
+  const a=appJson();
+  if(!/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(a.packageName)) throw new Error('パッケージ名の形式が不正です (例: tv.hsp.myapp)');
+  if(!/^[\w.\-]+\.hsp$/.test(a.mainScript)) throw new Error('メインスクリプト名は 英数字.hsp の形式にしてください');
+  const d=adJson();
+  if(d.appId && !/^ca-app-pub-\d+~\d+$/.test(d.appId)) throw new Error('AdMobアプリIDの形式が不正です (ca-app-pub-数字~数字)');
+  if(d.reward && !/^ca-app-pub-\d+\/\d+$/.test(d.reward)) throw new Error('広告ユニットIDの形式が不正です (ca-app-pub-数字/数字)');
+  if(!d.testing && (!d.appId||!d.reward)) throw new Error('テスト広告をOFFにするには、AdMobアプリIDとリワード広告ユニットIDの両方が必要です');
+  if(!$('pat').value.trim()||!$('owner').value.trim()||!$('repo').value.trim()) throw new Error('GitHubのトークン・owner・repoを入力してください');
+}
+
+// ---- GitHub API ----
+async function gh(path,opts){
+  opts=opts||{};
+  const h=Object.assign({'Accept':'application/vnd.github+json','Authorization':'Bearer '+$('pat').value.trim(),'X-GitHub-Api-Version':'2022-11-28'},opts.headers||{});
+  return fetch('https://api.github.com'+path,Object.assign({},opts,{headers:h}));
+}
+async function ghJson(path,opts,what){
+  const r=await gh(path,opts);
+  if(!r.ok){ let t=''; try{t=(await r.text()).slice(0,300);}catch(e){} throw new Error((what||path)+' 失敗 HTTP '+r.status+' '+t); }
+  return r.json();
+}
+const R=()=>'/repos/'+$('owner').value.trim()+'/'+$('repo').value.trim();
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+function b64(bytes){ let s=''; const n=0x8000; for(let i=0;i<bytes.length;i+=n) s+=String.fromCharCode.apply(null,bytes.subarray(i,i+n)); return btoa(s); }
+async function blobSha(bytes){
+  const h=new TextEncoder().encode('blob '+bytes.length+'\0'); const b=new Uint8Array(h.length+bytes.length); b.set(h,0); b.set(bytes,h.length);
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-1',b))).map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+
+// ---- 送るファイルを集める ----
+async function collectFiles(){
+  const files=[]; // {path, bytes}
+  const enc=new TextEncoder();
+  files.push({path:'config/app.json',bytes:enc.encode(JSON.stringify(appJson(),null,2)+'\n')});
+  files.push({path:'config/admob.json',bytes:enc.encode(JSON.stringify(adJson(),null,2)+'\n')});
+  const icf=$('iconFile').files[0];
+  if(icf){
+    const sizes={ldpi:36,mdpi:48,hdpi:72,xhdpi:96,xxhdpi:144,xxxhdpi:192};
+    const bmp=await createImageBitmap(icf);
+    const side=Math.min(bmp.width,bmp.height), sx=(bmp.width-side)/2, sy=(bmp.height-side)/2;
+    for(const k of Object.keys(sizes)){
+      const c=document.createElement('canvas'); c.width=c.height=sizes[k];
+      const x=c.getContext('2d'); x.imageSmoothingQuality='high'; x.drawImage(bmp,sx,sy,side,side,0,0,sizes[k],sizes[k]);
+      const bl=await new Promise(r=>c.toBlob(r,'image/png'));
+      files.push({path:'config/icon/'+k+'.png',bytes:new Uint8Array(await bl.arrayBuffer())});
+    }
+    logLine('アイコン: '+icf.name+' → 6サイズに変換');
+  }
+  const pz=$('projZip').files[0];
+  if(pz){
+    if(typeof JSZip==='undefined') throw new Error('JSZipを読み込めません(通信を確認)');
+    const zip=await JSZip.loadAsync(await pz.arrayBuffer());
+    const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir&&!n.startsWith('__MACOSX/')&&!n.split('/').pop().startsWith('._'));
+    const tops=new Set(names.map(n=>n.split('/')[0]));
+    const strip=(tops.size===1&&names.every(n=>n.includes('/')));
+    let n=0;
+    for(const name of names){
+      let p=name.replace(/\\/g,'/'); if(strip) p=p.slice(p.indexOf('/')+1);
+      if(!p||p.includes('..')||p.startsWith('.git/')) continue;
+      if(p==='config/app.json'||p==='config/admob.json') continue; // 設定は画面の入力値を優先
+      files.push({path:p,bytes:await zip.files[name].async('uint8array')}); n++;
+    }
+    logLine('プロジェクトZIP: '+n+'ファイル');
+  }
+  for(const f of $('hspFiles').files){ files.push({path:'hsp/'+f.name,bytes:new Uint8Array(await f.arrayBuffer())}); }
+  const z=$('assetZip').files[0];
+  if(z){
+    if(typeof JSZip==='undefined') throw new Error('JSZipを読み込めません(通信を確認)');
+    const zip=await JSZip.loadAsync(await z.arrayBuffer());
+    let n=0;
+    for(const name of Object.keys(zip.files)){
+      const e=zip.files[name]; if(e.dir) continue;
+      let p=name.replace(/\\/g,'/').replace(/^\.?\/+/,'');
+      if(p.startsWith('__MACOSX/')||p.split('/').pop().startsWith('.')) continue;
+      if(p.startsWith('assets/')) p=p.slice(7);
+      if(p.includes('..')) throw new Error('不正なパス: '+name);
+      files.push({path:'android/app/src/main/assets/'+p,bytes:await e.async('uint8array')}); n++;
+    }
+    logLine('素材ZIP: '+n+'ファイル');
+  }
+  return files;
+}
+
+// ---- コミット(差分のみ) ----
+async function pushFiles(files){
+  const repoInfo=await ghJson(R(),{},'リポジトリ情報');
+  const branch=repoInfo.default_branch;
+  logLine('ブランチ: '+branch);
+  const ref=await ghJson(R()+'/git/ref/heads/'+branch,{},'ブランチ参照');
+  const baseCommit=await ghJson(R()+'/git/commits/'+ref.object.sha,{},'ベースコミット');
+  const baseTreeSha=baseCommit.tree.sha;
+  const tree=await ghJson(R()+'/git/trees/'+baseTreeSha+'?recursive=1',{},'ツリー取得');
+  const have={}; (tree.tree||[]).forEach(t=>{ if(t.type==='blob') have[t.path]=t.sha; });
+  const changed=[];
+  for(const f of files){ const s=await blobSha(f.bytes); f.sha=s; if(have[f.path]!==s) changed.push(f); }
+  logLine('変更: '+changed.length+' / '+files.length+' ファイル');
+  files.filter(f=>/^hsp\//.test(f.path)).forEach(f=>logLine('  '+f.path+' '+f.sha.slice(0,7)+(have[f.path]===f.sha?' 変更なし':' 更新')));
+  if(changed.length===0) return {sha:ref.object.sha,branch,pushed:false};
+  const entries=[];
+  let done=0;
+  for(const f of changed){
+    const r=await ghJson(R()+'/git/blobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:b64(f.bytes),encoding:'base64'})},'blob作成 '+f.path);
+    entries.push({path:f.path,mode:'100644',type:'blob',sha:r.sha});
+    done++; if(done%10===0||done===changed.length) logLine('アップロード '+done+'/'+changed.length);
+  }
+  let newTree=null,last='';
+  for(let a=0;a<6;a++){
+    if(a>0){ await sleep(Math.min(500*Math.pow(2,a-1),4000)); logLine('tree作成をリトライ '+a); }
+    const r=await gh(R()+'/git/trees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_tree:baseTreeSha,tree:entries})});
+    if(r.ok){ newTree=await r.json(); break; }
+    last='HTTP '+r.status+' '+(await r.text()).slice(0,200);
+    if(r.status!==404) break;
+  }
+  if(!newTree) throw new Error('tree作成に失敗: '+last);
+  const commit=await ghJson(R()+'/git/commits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'pusher: '+changed.length+' files',tree:newTree.sha,parents:[ref.object.sha]})},'コミット作成');
+  await ghJson(R()+'/git/refs/heads/'+branch,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({sha:commit.sha})},'ブランチ更新');
+  logLine('コミット '+commit.sha.slice(0,7));
+  return {sha:commit.sha,branch,pushed:true};
+}
+
+// ---- ビルド待ち ----
+async function findRun(sha,pushed){
+  // pushなら push で起動した実行を待つ。変更なしなら手動起動(workflow_dispatch)する
+  if(!pushed){
+    logLine('変更がないため、ビルドだけ手動で起動します');
+    const wfs=await ghJson(R()+'/actions/workflows',{},'ワークフロー一覧');
+    const wf=(wfs.workflows||[]).find(w=>/android\.yml$/.test(w.path));
+    if(!wf) throw new Error('android.yml が見つかりません');
+    const r=await gh(R()+'/actions/workflows/'+wf.id+'/dispatches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:(await ghJson(R(),{},'repo')).default_branch})});
+    if(!r.ok) throw new Error('ビルド起動に失敗 HTTP '+r.status+' '+(await r.text()).slice(0,200));
+    await sleep(4000);
+  }
+  for(let i=0;i<40;i++){
+    const j=await ghJson(R()+'/actions/runs?per_page=10'+(pushed?'&head_sha='+sha:''),{},'実行一覧');
+    const run=(j.workflow_runs||[]).find(r=>/build-android/.test(r.name)||/android\.yml$/.test(r.path||''));
+    if(run) return run;
+    await sleep(3000);
+  }
+  throw new Error('ビルドの実行が見つかりません(paths条件に合う変更が無かった可能性)');
+}
+async function waitRun(run){
+  let lastS='';
+  for(let i=0;i<240;i++){
+    const r=await ghJson(R()+'/actions/runs/'+run.id,{},'実行状況');
+    const s=r.status+(r.conclusion?'/'+r.conclusion:'');
+    if(s!==lastS){ logLine('ビルド: '+s); lastS=s; }
+    if(r.status==='completed') return r;
+    await sleep(8000);
+  }
+  throw new Error('ビルドが長時間終わりません: '+run.html_url);
+}
+async function showFailure(run){
+  try{
+    const j=await ghJson(R()+'/actions/runs/'+run.id+'/jobs',{},'ジョブ');
+    for(const job of (j.jobs||[])){
+      const bad=(job.steps||[]).filter(s=>s.conclusion==='failure');
+      logLine('ジョブ "'+job.name+'": '+job.conclusion);
+      bad.forEach(s=>logLine('  失敗ステップ: '+s.name));
+    }
+  }catch(e){ logLine('失敗の詳細取得エラー: '+e.message); }
+  logLine('ログ全文: '+run.html_url);
+}
+async function download(run){
+  const j=await ghJson(R()+'/actions/runs/'+run.id+'/artifacts',{},'成果物一覧');
+  const arts=(j.artifacts||[]).filter(a=>!a.expired&&a.name==='hsp-android');
+  if(!arts.length){ logLine('成果物がありません: '+run.html_url); return; }
+  for(const art of arts){
+    logLine('取得中 '+art.name+' ('+Math.round(art.size_in_bytes/1024)+'KB)');
+    const r=await gh(R()+'/actions/artifacts/'+art.id+'/zip');
+    if(!r.ok) throw new Error('成果物の取得に失敗 HTTP '+r.status+' (手動で '+run.html_url+' から取得できます)');
+    const zip=await JSZip.loadAsync(await r.arrayBuffer());
+    for(const n of Object.keys(zip.files)){
+      if(zip.files[n].dir) continue;
+      const blob=await zip.files[n].async('blob'); const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=n.split('/').pop(); document.body.appendChild(a); a.click();
+      setTimeout(()=>{a.remove();URL.revokeObjectURL(url);},3000);
+      logLine('ダウンロード: '+a.download);
+      await sleep(700);
+    }
+  }
+}
+
+$('btnGo').onclick=async()=>{
+  const b=$('btnGo'); b.disabled=true; $('log').textContent='';
+  try{
+    validate(); save();
+    const files=await collectFiles();
+    const p=await pushFiles(files);
+    const run=await findRun(p.sha,p.pushed);
+    logLine('実行 #'+run.run_number+' '+run.html_url);
+    const done=await waitRun(run);
+    if(done.conclusion==='success'){ logLine('ビルド成功'); await download(done); logLine('完了'); }
+    else { logLine('ビルド失敗: '+done.conclusion); await showFailure(done); }
+  }catch(e){ logLine('エラー: '+(e&&e.message?e.message:e)); }
+  b.disabled=false;
+};
+$('btnLast').onclick=async()=>{
+  $('log').textContent='';
+  try{
+    const j=await ghJson(R()+'/actions/runs?per_page=5',{},'実行一覧');
+    const run=(j.workflow_runs||[])[0]; if(!run){ logLine('実行がありません'); return; }
+    logLine('最新: #'+run.run_number+' '+run.name+' '+run.status+'/'+(run.conclusion||'-')+' '+run.html_url);
+    if(run.conclusion==='failure') await showFailure(run);
+    if(run.conclusion==='success'){ if(confirm('この実行の成果物をダウンロードしますか?')) await download(run); }
+  }catch(e){ logLine('エラー: '+e.message); }
+};
+$('btnLoadCfg').onclick=async()=>{
+  try{
+    for(const n of ['app','admob']){
+      const r=await gh(R()+'/contents/config/'+n+'.json');
+      if(!r.ok){ logLine('config/'+n+'.json はまだありません'); continue; }
+      const j=await r.json(); const o=JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,'')))));
+      if(n==='app'){ $('packageName').value=o.packageName||''; $('appName').value=o.appName||''; $('versionCode').value=o.versionCode||1; $('versionName').value=o.versionName||'1.0'; $('orientation').value=o.orientation||'portrait'; $('mainScript').value=o.mainScript||'main.hsp'; $('allFilesAccess').checked=!!o.allFilesAccess; }
+      else { $('adAppId').value=o.appId||''; $('adReward').value=o.reward||''; $('adDevices').value=(o.testDevices||[]).join('\n'); $('adCooldown').value=o.cooldownMinutes!=null?o.cooldownMinutes:3; $('adDebug').checked=o.debugToast!==false; $('adTesting').checked=o.testing!==false; }
+      logLine('読み込み: config/'+n+'.json');
+    }
+    save(); adHint();
+  }catch(e){ logLine('エラー: '+e.message); }
+};
+function adHint(){ $('adTestHint').textContent=$('adTesting').checked?'今はテスト広告です(入力した本番IDは使われません)':'今は本番広告です。自分の端末で広告をタップすると規約違反になるので、テストデバイスIDを必ず入れてください'; }
+$('adTesting').addEventListener('change',adHint); adHint();
+$('iconFile').onchange=()=>{ const f=$('iconFile').files[0]; const im=$('iconPrev'); if(!f){ $('iconInfo').textContent=''; im.style.display='none'; return; } $('iconInfo').textContent=f.name+' ('+Math.round(f.size/1024)+'KB)'; im.src=URL.createObjectURL(f); im.style.display='block'; };
+$('hspFiles').onchange=()=>{ $('hspList').textContent=Array.from($('hspFiles').files).map(f=>f.name+' ('+Math.round(f.size/1024)+'KB)').join(' / '); };
+$('projZip').onchange=()=>{ const f=$('projZip').files[0]; $('projList').textContent=f?f.name+' ('+Math.round(f.size/1024)+'KB)':''; };
+$('assetZip').onchange=()=>{ const f=$('assetZip').files[0]; $('zipList').textContent=f?f.name+' ('+Math.round(f.size/1024)+'KB)':''; };
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# 任意: Apache系のレンタルサーバー向けの設定例。必要なときだけ ".htaccess" という名前で置く。
+# (置かなくても動く場合があります。.wasm が正しい種類で配信されないと、読み込みが少し遅くなることがあります)
+AddType application/wasm .wasm
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE application/javascript application/json application/wasm text/html
+</IfModule>
+# 更新が反映されないとき用: HTMLとjsonは毎回確認させる(他は ?v=ビルド番号 で更新される)
+<FilesMatch "\.(html|json)$">
+  Header set Cache-Control "no-cache"
+</FilesMatch>

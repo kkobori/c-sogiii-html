@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+
+    <application
+        android:allowBackup="true"
+        android:enableOnBackInvokedCallback="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@drawable/ic_launcher"
+        android:label="${appLabel}"
+        android:supportsRtl="true">
+        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="${admobAppId}"/>
+        <uses-library android:name="org.apache.http.legacy" android:required="false"/>
+        <activity android:name="tv.hsp.HspActivity"
+            android:exported="true"
+            android:resizeableActivity="false"
+            android:screenOrientation="${screenOrientation}"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
+            android:label="${appLabel}">
+        <meta-data android:name="android.app.lib_name"
+            android:value="hspproj" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+    <uses-feature android:name="android.hardware.vibrate" android:required="false" />
+    <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
+
+</manifest>

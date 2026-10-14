@@ -1,0 +1,41 @@
+name: build-web-hsp
+on:
+  workflow_dispatch:
+  push:
+    paths: ['hsp/**', 'config/**', 'web/**', 'tools/build_web.sh', 'tools/web_*', 'android/app/src/main/assets/**', '.github/workflows/web.yml']
+env:
+  # 公式OpenHSPのCI(.github/workflows/build.yml)と同じEmscriptenの版
+  EM_VERSION: 3.1.74
+  EM_CACHE_FOLDER: emsdk-cache-v4
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "1 設定を読む"
+        run: bash tools/build_web.sh config
+      - name: "2 公式OpenHSPを取得し hspcmp をビルド"
+        run: bash tools/build_web.sh openhsp
+      - name: "3 HSPスクリプトを自動調整して .ax にコンパイル"
+        run: bash tools/build_web.sh compile
+      - name: Emscripten のキャッシュ
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.EM_CACHE_FOLDER }}
+          key: ${{ env.EM_VERSION }}-${{ runner.os }}
+      - name: "4 Emscripten を用意"
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EM_VERSION }}
+          actions-cache-folder: ${{ env.EM_CACHE_FOLDER }}
+      - name: "5 公式ソースへ最小パッチ"
+        run: bash tools/build_web.sh patchsrc
+      - name: "6 hsp3dish.js をビルド(公式 makefile.emscripten)"
+        run: bash tools/build_web.sh buildjs
+      - name: "7 配布フォルダを組み立ててzip化"
+        run: bash tools/build_web.sh assemble
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hsp-web
+          path: out/*.zip
+          if-no-files-found: error
