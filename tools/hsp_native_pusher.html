@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>HSP Native Pusher</title>
+<title>HSP Native Pusher (Android / Web)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{--bg:#10141a;--card:#1a212b;--fg:#e8edf3;--mut:#93a1b3;--acc:#4da3ff;--ok:#5fd38d;--ng:#ff6b6b;--bd:#2c3745}
@@ -31,6 +31,12 @@ a{color:var(--acc)}
 <body>
 <h1>HSP Native Pusher</h1>
 
+<details open><summary>⓪ ビルド対象</summary><div class="in">
+  <label>何を作りますか</label>
+  <select id="target"><option value="android">Android (apk/aab)</option><option value="web">Web (zip: レンタルサーバーに置く)</option></select>
+  <div class="hint">Webを選ぶと、実行は web.yml、成果物は hsp-web の zip になります。</div>
+</div></details>
+
 <details open><summary>① GitHub</summary><div class="in">
   <label>アクセストークン (repo と workflow 権限)</label>
   <input type="password" id="pat" autocomplete="off" placeholder="ghp_… / github_pat_…">
@@ -48,11 +54,16 @@ a{color:var(--acc)}
   <div style="flex:1"><label>versionName</label><input type="text" id="versionName" value="1.0"></div></div>
   <label>アイコン画像 (PNG/JPG。正方形・512px以上推奨。選ばなければ今のアイコンのまま)</label>
   <input type="file" id="iconFile" accept="image/png,image/jpeg">
-  <div class="files" id="iconInfo"></div><img id="iconPrev" alt="" style="display:none;width:72px;height:72px;border-radius:14px;margin-top:6px">
+  <div class="files" id="iconInfo"></div><button class="sub" id="btnIcon512" type="button" style="margin-top:6px">ストア用 512×512 PNG を保存</button>
+  <img id="iconPrev" alt="" style="display:none;width:72px;height:72px;border-radius:14px;margin-top:6px">
+  <label>フィーチャーグラフィック (Playストア用 1024×500。背景画像は省略可)</label>
+  <input type="file" id="featBg" accept="image/png,image/jpeg">
+  <div class="row"><div style="flex:2"><label>タイトル文字(空ならアプリ名)</label><input type="text" id="featTitle"></div>
+  <div style="flex:1"><label>背景色</label><input type="color" id="featColor" value="#1f3a5f"></div></div>
+  <button class="sub" id="btnFeat" type="button">フィーチャーグラフィックを作って保存</button>
+  <div class="hint">背景画像を選ぶとそれを敷き、無ければ背景色で塗ります。上で選んだアイコンがあれば左に置きます。JPEGで保存されます。</div>
   <label>画面の向き</label>
   <select id="orientation"><option value="portrait">縦固定</option><option value="landscape">横固定</option><option value="sensorLandscape">横(左右自動)</option><option value="fullSensor">自動回転</option></select>
-  <label class="chk" style="margin-top:12px"><input type="checkbox" id="allFilesAccess"> 共有ストレージ版 (apk専用): 「すべてのファイルへのアクセス」権限を付け、保存先を /storage/emulated/0/ のまま残す</label>
-  <div class="hint">ONにすると、apkにだけ MANAGE_EXTERNAL_STORAGE が付きます(aabには付きません)。このaabはPlayストアに出せません。sogmake のような、共有フォルダを直接読み書きするアプリ用です。初回起動時に許可の案内が出ます。</div>
 </div></details>
 
 <details><summary>③ 広告 (AdMob リワード)</summary><div class="in">
@@ -82,8 +93,24 @@ a{color:var(--acc)}
   <div class="files" id="zipList"></div>
 </div></details>
 
+<details><summary>⑤ Web設定 (Webビルドのとき。空欄でOK)</summary><div class="in">
+  <label>保存フォルダ名 (空欄=パッケージ名から自動。同じサーバー内で他のアプリと重ならない名前に)</label>
+  <input type="text" id="webSaveDir" autocapitalize="off" autocomplete="off" placeholder="hspsave_tv_hsp_hspproj">
+  <div class="hint">変えると別の保存場所になり、今までのセーブは見えなくなります。</div>
+  <div class="row"><div style="flex:1"><label>画面の幅</label><input type="number" id="webWx" placeholder="480"></div>
+  <div style="flex:1"><label>画面の高さ</label><input type="number" id="webWy" placeholder="800"></div></div>
+  <div class="row"><div style="flex:1"><label>1フレームの最大ステップ</label><input type="number" id="webLimitStep" placeholder="200000"></div>
+  <div style="flex:1"><label>FPS (0=自動)</label><input type="number" id="webFps" placeholder="0"></div></div>
+  <label>AdSense パブリッシャーID (ca-pub-…。空欄=広告なし)</label>
+  <input type="text" id="webAdsenseId" autocapitalize="off" autocomplete="off" placeholder="ca-pub-1234567890123456">
+  <label>広告のモード</label>
+  <select id="webAdsenseMode"><option value="test">テスト広告</option><option value="live">本番広告</option></select>
+  <div class="hint">本番広告にするのは、H5広告が承認され、サイトの公開ドメインで確認してからにしてください。</div>
+  <div class="hint">動きが遅いときは、ビルドし直さなくても、ページのURLの後ろに ?step=20000 のように付けて試せます。</div>
+</div></details>
+
 <div>
-  <button id="btnGo">反映してビルド → apk/aab を取得</button>
+  <button id="btnGo">反映してビルド → 成果物を取得</button>
   <button class="sub" id="btnLast">最新の実行の結果を見る</button>
 </div>
 <div id="log"></div>
@@ -91,11 +118,11 @@ a{color:var(--acc)}
 <script>
 const $ = id => document.getElementById(id);
 const K = 'hsp_native_pusher_v1';
-const FIELDS = ['mainScript','pat','owner','repo','packageName','appName','versionCode','versionName','orientation','adAppId','adReward','adDevices','adCooldown'];
+const FIELDS = ['target','webSaveDir','webLimitStep','webFps','webAdsenseId','webAdsenseMode','webWx','webWy','mainScript','pat','owner','repo','packageName','appName','versionCode','versionName','orientation','adAppId','adReward','adDevices','adCooldown'];
 
 function logLine(s){ const e=$('log'); e.textContent += '['+new Date().toLocaleTimeString()+'] '+s+'\n'; e.scrollTop=e.scrollHeight; }
-function save(){ try{ const o={}; FIELDS.forEach(f=>o[f]=$(f).value); o.adDebug=$('adDebug').checked; o.adTesting=$('adTesting').checked; o.allFilesAccess=$('allFilesAccess').checked; localStorage.setItem(K,JSON.stringify(o)); }catch(e){} }
-function load(){ try{ const o=JSON.parse(localStorage.getItem(K)||'{}'); FIELDS.forEach(f=>{ if(o[f]!=null) $(f).value=o[f]; }); if(o.adDebug!=null) $('adDebug').checked=o.adDebug; if(o.allFilesAccess!=null) $('allFilesAccess').checked=!!o.allFilesAccess; if(o.adTesting!=null) $('adTesting').checked=o.adTesting; }catch(e){} }
+function save(){ try{ const o={}; FIELDS.forEach(f=>o[f]=$(f).value); o.adDebug=$('adDebug').checked; o.adTesting=$('adTesting').checked; localStorage.setItem(K,JSON.stringify(o)); }catch(e){} }
+function load(){ try{ const o=JSON.parse(localStorage.getItem(K)||'{}'); FIELDS.forEach(f=>{ if(o[f]!=null) $(f).value=o[f]; }); if(o.adDebug!=null) $('adDebug').checked=o.adDebug; if(o.adTesting!=null) $('adTesting').checked=o.adTesting; }catch(e){} }
 document.addEventListener('input', save); document.addEventListener('change', save);
 load();
 
@@ -103,17 +130,27 @@ load();
 function appJson(){
   return { packageName:$('packageName').value.trim()||'tv.hsp.hspproj', appName:$('appName').value.trim()||'hspproj',
     versionCode:Math.max(1,parseInt($('versionCode').value,10)||1), versionName:$('versionName').value.trim()||'1.0',
-    orientation:$('orientation').value, mainScript:($('mainScript').value.trim()||'main.hsp'), allFilesAccess:$('allFilesAccess').checked };
+    orientation:$('orientation').value, mainScript:($('mainScript').value.trim()||'main.hsp') };
 }
 function adJson(){
   const devs=$('adDevices').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
   return { appId:$('adAppId').value.trim(), reward:$('adReward').value.trim(), testing:$('adTesting').checked, testDevices:devs,
     cooldownMinutes:Math.max(0,parseInt($('adCooldown').value,10)||0), debugToast:$('adDebug').checked };
 }
+function webJson(){
+  const o={}; const v=id=>$(id).value.trim();
+  if(v('webSaveDir')) o.saveDir=v('webSaveDir');
+  [['webWx','wx'],['webWy','wy'],['webLimitStep','limitStep'],['webFps','fps']].forEach(([id,k])=>{ if(v(id)!==''&&!isNaN(parseInt(v(id),10))) o[k]=parseInt(v(id),10); });
+  if(v('webAdsenseId')) o.adsenseClientId=v('webAdsenseId');
+  o.adsenseTest=($('webAdsenseMode').value!=='live');
+  return o;
+}
 function validate(){
   const a=appJson();
   if(!/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(a.packageName)) throw new Error('パッケージ名の形式が不正です (例: tv.hsp.myapp)');
   if(!/^[\w.\-]+\.hsp$/.test(a.mainScript)) throw new Error('メインスクリプト名は 英数字.hsp の形式にしてください');
+  if($('webAdsenseId').value.trim() && !/^(ca-)?pub-[0-9]{6,32}$/.test($('webAdsenseId').value.trim())) throw new Error('AdSenseパブリッシャーIDは ca-pub-数字 の形で入力してください');
+  if($('webSaveDir').value.trim() && !/^[A-Za-z0-9_\-]{1,64}$/.test($('webSaveDir').value.trim())) throw new Error('保存フォルダ名は 英数字・_・- のみ(64文字まで)');
   const d=adJson();
   if(d.appId && !/^ca-app-pub-\d+~\d+$/.test(d.appId)) throw new Error('AdMobアプリIDの形式が不正です (ca-app-pub-数字~数字)');
   if(d.reward && !/^ca-app-pub-\d+\/\d+$/.test(d.reward)) throw new Error('広告ユニットIDの形式が不正です (ca-app-pub-数字/数字)');
@@ -147,6 +184,7 @@ async function collectFiles(){
   const enc=new TextEncoder();
   files.push({path:'config/app.json',bytes:enc.encode(JSON.stringify(appJson(),null,2)+'\n')});
   files.push({path:'config/admob.json',bytes:enc.encode(JSON.stringify(adJson(),null,2)+'\n')});
+  files.push({path:'config/web.json',bytes:enc.encode(JSON.stringify(webJson(),null,2)+'\n')});
   const icf=$('iconFile').files[0];
   if(icf){
     const sizes={ldpi:36,mdpi:48,hdpi:72,xhdpi:96,xxhdpi:144,xxxhdpi:192};
@@ -171,7 +209,7 @@ async function collectFiles(){
     for(const name of names){
       let p=name.replace(/\\/g,'/'); if(strip) p=p.slice(p.indexOf('/')+1);
       if(!p||p.includes('..')||p.startsWith('.git/')) continue;
-      if(p==='config/app.json'||p==='config/admob.json') continue; // 設定は画面の入力値を優先
+      if(p==='config/app.json'||p==='config/admob.json'||p==='config/web.json') continue; // 設定は画面の入力値を優先
       files.push({path:p,bytes:await zip.files[name].async('uint8array')}); n++;
     }
     logLine('プロジェクトZIP: '+n+'ファイル');
@@ -233,24 +271,38 @@ async function pushFiles(files){
 }
 
 // ---- ビルド待ち ----
+const TARGETS={
+  android:{name:/build-android/,path:/android\.yml$/,wf:/android\.yml$/,art:'hsp-android'},
+  web:{name:/build-web/,path:/web\.yml$/,wf:/web\.yml$/,art:'hsp-web'}
+};
+const TG=()=>TARGETS[$('target').value]||TARGETS.android;
+const isRunOf=r=>TG().name.test(r.name||'')||TG().path.test(r.path||'');
 async function findRun(sha,pushed){
+  let t0=0;
   // pushなら push で起動した実行を待つ。変更なしなら手動起動(workflow_dispatch)する
   if(!pushed){
     logLine('変更がないため、ビルドだけ手動で起動します');
     const wfs=await ghJson(R()+'/actions/workflows',{},'ワークフロー一覧');
-    const wf=(wfs.workflows||[]).find(w=>/android\.yml$/.test(w.path));
-    if(!wf) throw new Error('android.yml が見つかりません');
+    const wf=(wfs.workflows||[]).find(w=>TG().wf.test(w.path));
+    if(!wf) throw new Error('対象のワークフロー(.yml)が見つかりません。先に④でzipを反映してください');
     const r=await gh(R()+'/actions/workflows/'+wf.id+'/dispatches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:(await ghJson(R(),{},'repo')).default_branch})});
     if(!r.ok) throw new Error('ビルド起動に失敗 HTTP '+r.status+' '+(await r.text()).slice(0,200));
+    t0=Date.now();
     await sleep(4000);
   }
   for(let i=0;i<40;i++){
     const j=await ghJson(R()+'/actions/runs?per_page=10'+(pushed?'&head_sha='+sha:''),{},'実行一覧');
-    const run=(j.workflow_runs||[]).find(r=>/build-android/.test(r.name)||/android\.yml$/.test(r.path||''));
+    const run=(j.workflow_runs||[]).find(r=>isRunOf(r)&&(pushed||new Date(r.created_at).getTime()>=t0-15000));
     if(run) return run;
+    if(pushed && i===10){
+      logLine('自動起動が見つからないため、手動で起動します');
+      const wfs=await ghJson(R()+'/actions/workflows',{},'ワークフロー一覧');
+      const wf=(wfs.workflows||[]).find(w=>TG().wf.test(w.path));
+      if(wf){ const r=await gh(R()+'/actions/workflows/'+wf.id+'/dispatches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ref:(await ghJson(R(),{},'repo')).default_branch})}); if(!r.ok) logLine('手動起動に失敗 HTTP '+r.status); }
+    }
     await sleep(3000);
   }
-  throw new Error('ビルドの実行が見つかりません(paths条件に合う変更が無かった可能性)');
+  throw new Error('ビルドの実行が見つかりません(対象のワークフローが無い可能性。④でzipを反映してください)');
 }
 async function waitRun(run){
   let lastS='';
@@ -270,13 +322,18 @@ async function showFailure(run){
       const bad=(job.steps||[]).filter(s=>s.conclusion==='failure');
       logLine('ジョブ "'+job.name+'": '+job.conclusion);
       bad.forEach(s=>logLine('  失敗ステップ: '+s.name));
+      // 失敗の理由(注釈)。ビルドスクリプトが末尾ログをここに出す
+      try{
+        const an=await ghJson(R()+'/check-runs/'+job.id+'/annotations?per_page=20',{},'注釈');
+        (an||[]).filter(a=>a.annotation_level==='failure').forEach(a=>{ logLine('  ── 理由 ──\n'+String(a.message||'').slice(0,3500)); });
+      }catch(e){ logLine('  (失敗理由の取得エラー: '+e.message+')'); }
     }
   }catch(e){ logLine('失敗の詳細取得エラー: '+e.message); }
   logLine('ログ全文: '+run.html_url);
 }
 async function download(run){
   const j=await ghJson(R()+'/actions/runs/'+run.id+'/artifacts',{},'成果物一覧');
-  const arts=(j.artifacts||[]).filter(a=>!a.expired&&a.name==='hsp-android');
+  const arts=(j.artifacts||[]).filter(a=>!a.expired&&a.name===TG().art);
   if(!arts.length){ logLine('成果物がありません: '+run.html_url); return; }
   for(const art of arts){
     logLine('取得中 '+art.name+' ('+Math.round(art.size_in_bytes/1024)+'KB)');
@@ -311,8 +368,8 @@ $('btnGo').onclick=async()=>{
 $('btnLast').onclick=async()=>{
   $('log').textContent='';
   try{
-    const j=await ghJson(R()+'/actions/runs?per_page=5',{},'実行一覧');
-    const run=(j.workflow_runs||[])[0]; if(!run){ logLine('実行がありません'); return; }
+    const j=await ghJson(R()+'/actions/runs?per_page=30',{},'実行一覧');
+    const run=(j.workflow_runs||[]).find(isRunOf); if(!run){ logLine('この対象の実行がまだありません'); return; }
     logLine('最新: #'+run.run_number+' '+run.name+' '+run.status+'/'+(run.conclusion||'-')+' '+run.html_url);
     if(run.conclusion==='failure') await showFailure(run);
     if(run.conclusion==='success'){ if(confirm('この実行の成果物をダウンロードしますか?')) await download(run); }
@@ -324,7 +381,7 @@ $('btnLoadCfg').onclick=async()=>{
       const r=await gh(R()+'/contents/config/'+n+'.json');
       if(!r.ok){ logLine('config/'+n+'.json はまだありません'); continue; }
       const j=await r.json(); const o=JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,'')))));
-      if(n==='app'){ $('packageName').value=o.packageName||''; $('appName').value=o.appName||''; $('versionCode').value=o.versionCode||1; $('versionName').value=o.versionName||'1.0'; $('orientation').value=o.orientation||'portrait'; $('mainScript').value=o.mainScript||'main.hsp'; $('allFilesAccess').checked=!!o.allFilesAccess; }
+      if(n==='app'){ $('packageName').value=o.packageName||''; $('appName').value=o.appName||''; $('versionCode').value=o.versionCode||1; $('versionName').value=o.versionName||'1.0'; $('orientation').value=o.orientation||'portrait'; $('mainScript').value=o.mainScript||'main.hsp'; }
       else { $('adAppId').value=o.appId||''; $('adReward').value=o.reward||''; $('adDevices').value=(o.testDevices||[]).join('\n'); $('adCooldown').value=o.cooldownMinutes!=null?o.cooldownMinutes:3; $('adDebug').checked=o.debugToast!==false; $('adTesting').checked=o.testing!==false; }
       logLine('読み込み: config/'+n+'.json');
     }
@@ -333,6 +390,56 @@ $('btnLoadCfg').onclick=async()=>{
 };
 function adHint(){ $('adTestHint').textContent=$('adTesting').checked?'今はテスト広告です(入力した本番IDは使われません)':'今は本番広告です。自分の端末で広告をタップすると規約違反になるので、テストデバイスIDを必ず入れてください'; }
 $('adTesting').addEventListener('change',adHint); adHint();
+$('btnIcon512').onclick=async()=>{
+  try{
+    const f=$('iconFile').files[0]; if(!f) throw new Error('先にアイコン画像を選んでください');
+    const bmp=await createImageBitmap(f);
+    const side=Math.min(bmp.width,bmp.height);
+    const c=document.createElement('canvas'); c.width=c.height=512;
+    const x=c.getContext('2d'); x.imageSmoothingQuality='high';
+    x.drawImage(bmp,(bmp.width-side)/2,(bmp.height-side)/2,side,side,0,0,512,512);
+    if(side<512) logLine('注意: 元画像が512pxより小さいため、拡大されてぼやけます');
+    const bl=await new Promise(r=>c.toBlob(r,'image/png'));
+    const u=URL.createObjectURL(bl); const el=document.createElement('a');
+    el.href=u; el.download='store_icon_512.png'; document.body.appendChild(el); el.click(); el.remove();
+    logLine('store_icon_512.png を保存しました(ダウンロードフォルダ)');
+  }catch(e){ logLine('エラー: '+e.message); }
+};
+$('btnFeat').onclick=async()=>{
+  try{
+    const W=1024,H=500;
+    const c=document.createElement('canvas'); c.width=W; c.height=H;
+    const x=c.getContext('2d');
+    x.fillStyle=$('featColor').value; x.fillRect(0,0,W,H);
+    const bg=$('featBg').files[0];
+    if(bg){
+      const b=await createImageBitmap(bg); const k=Math.max(W/b.width,H/b.height);
+      const w=b.width*k,h=b.height*k; x.drawImage(b,(W-w)/2,(H-h)/2,w,h);
+    }
+    let tx=W/2, align='center';
+    const ic=$('iconFile').files[0];
+    if(ic){
+      const b=await createImageBitmap(ic); const side=Math.min(b.width,b.height), S=280, X=70, Y=(H-S)/2, r=56;
+      x.save(); x.beginPath();
+      x.moveTo(X+r,Y); x.arcTo(X+S,Y,X+S,Y+S,r); x.arcTo(X+S,Y+S,X,Y+S,r); x.arcTo(X,Y+S,X,Y,r); x.arcTo(X,Y,X+S,Y,r); x.closePath(); x.clip();
+      x.drawImage(b,(b.width-side)/2,(b.height-side)/2,side,side,X,Y,S,S); x.restore();
+      tx=X+S+50; align='left';
+    }
+    const title=$('featTitle').value.trim()||$('appName').value.trim()||'';
+    if(title){
+      const maxW=W-tx-(align==='left'?50:100)+(align==='center'?0:0);
+      let fs=96; x.font='bold '+fs+'px sans-serif';
+      while(fs>28 && x.measureText(title).width>maxW){ fs-=4; x.font='bold '+fs+'px sans-serif'; }
+      x.textAlign=align; x.textBaseline='middle'; x.fillStyle='#fff';
+      x.shadowColor='rgba(0,0,0,0.6)'; x.shadowBlur=12; x.shadowOffsetY=3;
+      x.fillText(title,tx,H/2);
+    }
+    const bl=await new Promise(r=>c.toBlob(r,'image/jpeg',0.95));
+    const u=URL.createObjectURL(bl); const el=document.createElement('a');
+    el.href=u; el.download='feature_graphic_1024x500.jpg'; document.body.appendChild(el); el.click(); el.remove();
+    logLine('feature_graphic_1024x500.jpg を保存しました(ダウンロードフォルダ)');
+  }catch(e){ logLine('エラー: '+e.message); }
+};
 $('iconFile').onchange=()=>{ const f=$('iconFile').files[0]; const im=$('iconPrev'); if(!f){ $('iconInfo').textContent=''; im.style.display='none'; return; } $('iconInfo').textContent=f.name+' ('+Math.round(f.size/1024)+'KB)'; im.src=URL.createObjectURL(f); im.style.display='block'; };
 $('hspFiles').onchange=()=>{ $('hspList').textContent=Array.from($('hspFiles').files).map(f=>f.name+' ('+Math.round(f.size/1024)+'KB)').join(' / '); };
 $('projZip').onchange=()=>{ const f=$('projZip').files[0]; $('projList').textContent=f?f.name+' ('+Math.round(f.size/1024)+'KB)':''; };
