@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "keyMap": {
+    "A": 88,
+    "B": 90,
+    "X": 67,
+    "DPAD_UP": 38,
+    "DPAD_DOWN": 40,
+    "DPAD_LEFT": 37,
+    "DPAD_RIGHT": 39
+  },
+  "indexMap": {
+    "A": 0,
+    "B": 2,
+    "X": 3,
+    "DPAD_UP": 12,
+    "DPAD_DOWN": 13,
+    "DPAD_LEFT": 14,
+    "DPAD_RIGHT": 15
+  }
+}

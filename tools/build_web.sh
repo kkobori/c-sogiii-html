@@ -131,7 +131,7 @@ assemble)
   python3 "$ROOT/tools/web_pack_assets.py" "$ASSETS" "$DIST" || fail "素材のパックに失敗(android/app/src/main/assets を確認)"
   cp "$WORK/openhsp/hsp3dish.js" "$WORK/openhsp/hsp3dish.wasm" "$DIST/"
   cp "$ROOT/hsp/main.ax" "$DIST/main.ax"
-  cp "$ROOT/web/hsp-web-runtime.js" "$ROOT/web/mml-engine.js" "$ROOT/web/ad-engine.js" "$ROOT/web/htaccess_sample.txt" "$DIST/"
+  cp "$ROOT/web/hsp-web-runtime.js" "$ROOT/web/mml-engine.js" "$ROOT/web/ad-engine.js" "$ROOT/web/pad-engine.js" "$ROOT/web/htaccess_sample.txt" "$DIST/"
   if [ -f "$ASSETS/hsp-synth.js" ]; then cp "$ASSETS/hsp-synth.js" "$DIST/"; else echo "注意: hsp-synth.js が assets に無いので MML は無音になります"; fi
   cp "$WORK/openhsp/LICENSE" "$DIST/LICENSE_OpenHSP.txt"
   python3 - "$ROOT" "$WORK" "$DIST" "$BUILD" <<'PY' || fail "配布ファイルの生成に失敗"
@@ -139,6 +139,21 @@ import json, sys
 root, work, dist, build = sys.argv[1:5]
 cfg = json.load(open(work + "/webconfig.json", encoding="utf-8"))
 cfg["build"] = build
+# ゲームパッドの割り当て (config/gamepad.json)。無ければ入れない
+try:
+    _g = json.load(open(root + "/config/gamepad.json", encoding="utf-8"))
+    _km = {k: int(v) for k, v in (_g.get("keyMap") or {}).items() if str(v).strip() != "" and 1 <= int(v) <= 255}
+    _im = {k: int(v) for k, v in (_g.get("indexMap") or {}).items() if str(v).strip() != "" and int(v) >= 0}
+    if _km:
+        cfg["gamepad"] = {"keyMap": _km, "indexMap": _im}
+        _m = "割り当て %d 個: %s" % (len(_km), ", ".join("%s→%d" % kv for kv in _km.items()))
+        print("ゲームパッド設定: " + _m); print("::notice title=ゲームパッド設定 (Web)::" + _m)
+    else:
+        print("ゲームパッド設定: 割り当てなし")
+except FileNotFoundError:
+    print("ゲームパッド設定: config/gamepad.json なし(割り当てなし)")
+except Exception as _e:
+    print("::error title=gamepad.json が読めません::" + str(_e).replace("\n", " ")); sys.exit(1)
 import re
 src = open(root + "/hsp/main.hsp", encoding="utf-8", errors="replace").read()
 cfg["mml"] = sorted(set(re.findall(r"::mmlt::([^\"\r\n]+)\"", src)))
