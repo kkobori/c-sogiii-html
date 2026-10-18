@@ -620,7 +620,17 @@
       row.appendChild(nm); row.appendChild(b1); row.appendChild(b2); body.appendChild(row);
     });
   }
-  function bkCleanup() {                       // 画面・イベント・音を元に戻す(何度呼んでも安全)
+  // 本物の一時停止: エンジンの描画ループ(emscripten main loop)そのものを止める。使えない版では false を返す
+  function mainLoopCtl(act) {
+    try {
+      var M = Module || {}, B = root.Browser && root.Browser.mainLoop;
+      if (act === 'pause') { if (typeof M.pauseMainLoop === 'function') { M.pauseMainLoop(); return 'Module'; } if (B && typeof B.pause === 'function') { B.pause(); return 'Browser'; } }
+      else { if (typeof M.resumeMainLoop === 'function') { M.resumeMainLoop(); return 'Module'; } if (B && typeof B.resume === 'function') { B.resume(); return 'Browser'; } }
+    } catch (e) { bkTrace('描画ループの' + act + 'で例外: ' + errText(e)); }
+    return '';
+  }
+  function bkCleanup() {
+    if (bk.paused) { bk.paused = false; bkTrace('描画ループを再開 ' + mainLoopCtl('resume')); }                       // 画面・イベント・音を元に戻す(何度呼んでも安全)
     bk.open = false; bk.busy = false; bk.spec = null;
     if (bk.root) { try { bk.root.remove(); } catch (e) {} bk.root = null; }
     if (bk.esc) { document.removeEventListener('keydown', bk.esc, true); bk.esc = null; }
@@ -637,7 +647,7 @@
     if (!spec) { bkTrace('書き方が不正です slotmax=' + slotmax + ' size=' + size); toast('バックアップの指定が正しくありません'); return -1; }
     if (!layer) { bkTrace('保存機能が未準備です'); return -1; }
     if (bk.open) { bkTrace('すでに開いています'); return 0; }
-    bk.polls = 0; bk.winT = 0; bk.winN = 0; bk.spin = false;
+    bk.polls = 0; bk.winT = 0; bk.winN = 0; bk.spin = false; bk.paused = false;
     try {
       bkTrace('画面を作ります');
       bkCss();
@@ -685,8 +695,10 @@
       if (!bk.winT || nowT - bk.winT > 100) { bk.winT = nowT; bk.winN = 0; }
       bk.winN++;
       if (bk.open && bk.winN > 30) {
-        bkTrace('待ちが空回りしています(100msに' + bk.winN + '回, poll ' + bk.polls + '回目)。待つのをやめて、画面を開いたままゲームを再開します');
-        bk.spin = true; return 0;
+        bkTrace('待ちが空回りしています(100msに' + bk.winN + '回, poll ' + bk.polls + '回目)');
+        bk.spin = true;
+        if (!bk.paused) { var how = mainLoopCtl('pause'); if (how) { bk.paused = true; bkTrace('描画ループを止めました(' + how + ')。画面を閉じると再開します'); return 2; } bkTrace('描画ループを止める方法が無い版です'); }
+        return bk.paused ? 2 : 0;
       }
       if (bk.polls === 1 || bk.polls % 200 === 0) bkTrace('待機中(poll ' + bk.polls + '回目) 画面=' + (bk.root && bk.root.isConnected ? 'あり' : 'なし'));
       if (bk.open && !(bk.root && bk.root.isConnected)) { bkTrace('画面が見つからないため、待ちを解きます'); bkCleanup(); }
