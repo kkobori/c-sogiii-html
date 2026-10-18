@@ -630,7 +630,7 @@
     return '';
   }
   function bkCleanup() {
-    if (bk.paused) { bk.paused = false; bkTrace('描画ループを再開 ' + mainLoopCtl('resume')); }                       // 画面・イベント・音を元に戻す(何度呼んでも安全)
+                       // 画面・イベント・音を元に戻す(何度呼んでも安全)
     bk.open = false; bk.busy = false; bk.spec = null;
     if (bk.root) { try { bk.root.remove(); } catch (e) {} bk.root = null; }
     if (bk.esc) { document.removeEventListener('keydown', bk.esc, true); bk.esc = null; }
@@ -697,8 +697,7 @@
       if (bk.open && bk.winN > 30) {
         bkTrace('待ちが空回りしています(100msに' + bk.winN + '回, poll ' + bk.polls + '回目)');
         bk.spin = true;
-        if (!bk.paused) { var how = mainLoopCtl('pause'); if (how) { bk.paused = true; bkTrace('描画ループを止めました(' + how + ')。画面を閉じると再開します'); return 2; } bkTrace('描画ループを止める方法が無い版です'); }
-        return bk.paused ? 2 : 0;
+        return 0;      // 描画ループを止める方法(pauseMainLoop)は、実機で効かず空回りが続いたため使わない
       }
       if (bk.polls === 1 || bk.polls % 200 === 0) bkTrace('待機中(poll ' + bk.polls + '回目) 画面=' + (bk.root && bk.root.isConnected ? 'あり' : 'なし'));
       if (bk.open && !(bk.root && bk.root.isConnected)) { bkTrace('画面が見つからないため、待ちを解きます'); bkCleanup(); }
