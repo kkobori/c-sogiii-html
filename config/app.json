@@ -6,5 +6,7 @@
   "orientation": "portrait",
   "mainScript": "wwwsogiii.hsp",
   "allFilesAccess": true,
-  "buildAab": true
+  "buildAab": true,
+  "crashLogApk": true,
+  "crashLogAab": false
 }

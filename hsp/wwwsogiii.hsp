@@ -2249,8 +2249,8 @@ my=-1
 
 gosub *btnposini
 
-//mmload "::mmlt::gdata/bgm/dan.txt", 0, 1
-mmload "::sound::gdata/bgm/dan.mp3", 0, 1
+mmload "::mmlt::gdata/bgm/dan.txt", 0, 1
+//mmload "::sound::gdata/bgm/dan.mp3", 0, 1
 
     ;gosub *danload
     

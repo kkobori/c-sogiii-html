@@ -113,6 +113,9 @@ button.sm{padding:7px 10px;font-size:13px;margin:4px 4px 0 0}
   <select id="orientation"><option value="portrait">縦固定</option><option value="landscape">横固定</option><option value="sensorLandscape">横(左右自動)</option><option value="fullSensor">自動回転</option></select>
   <label class="chk" style="margin-top:12px"><input type="checkbox" id="buildAab" checked> AAB (Playストア提出用) も作る</label>
   <div class="hint">Androidのみ。OFFにすると apk だけを作ります(ビルドが速くなり、成果物も小さくなります)。Playストアに出すときはONにしてください。</div>
+  <label class="chk" style="margin-top:12px"><input type="checkbox" id="crashLogApk" checked> 起動直後に「前回の終了ログ」を出す: apk</label>
+  <label class="chk"><input type="checkbox" id="crashLogAab"> 起動直後に「前回の終了ログ」を出す: aab</label>
+  <div class="hint">Androidのみ。アプリが前回落ちたときなどに、次の起動直後に出る確認用ウィンドウです。テスト用のapkはON、Playストアに出すaabはOFFがおすすめです。OFFでも、落ちた記録の収集は続きます。</div>
   <label class="chk" style="margin-top:12px"><input type="checkbox" id="allFilesAccess"> 共有ストレージ版 (apk専用): 「すべてのファイルへのアクセス」権限を付け、保存先を /storage/emulated/0/ のまま残す</label>
   <div class="hint">ONにすると、apkにだけ MANAGE_EXTERNAL_STORAGE が付きます(aabには付きません)。このaabはPlayストアに出せません。sogmake のような、共有フォルダを直接読み書きするアプリ用です。初回起動時に許可の案内が出ます。</div>
   </div>
@@ -218,7 +221,7 @@ const K = 'hsp_native_pusher_v1';          // 旧: 1組だけの保存(最初の
 const WK = 'hsp_native_pusher_works_v1';   // 新: ワーク一覧
 const FIELDS = ['target','webSaveDir','webLimitStep','webFps','webAdsenseId','webAdsenseMode','webWx','webWy','mainScript','pat','owner','repo','packageName','appName','versionCode','versionName','orientation','adAppId','adReward','adDevices','adCooldown'];
 const WORK_FIELDS = FIELDS.filter(f=>f!=='pat').concat(['featTitle','featColor']);   // トークンはワークに入れない(全ワーク共通)
-const CHECKS = ['adDebug','adTesting','allFilesAccess','sendPad','buildAab'];
+const CHECKS = ['adDebug','adTesting','allFilesAccess','sendPad','buildAab','crashLogApk','crashLogAab'];
 // 画面の初期値(新しいワークの出発点)
 const DEFAULTS = {}; WORK_FIELDS.forEach(f=>DEFAULTS[f]=$(f).value); CHECKS.forEach(f=>DEFAULTS[f]=$(f).checked);
 
@@ -367,7 +370,7 @@ $('wImpFile').onchange=()=>{
 function appJson(){
   return { packageName:$('packageName').value.trim()||'tv.hsp.hspproj', appName:$('appName').value.trim()||'hspproj',
     versionCode:Math.max(1,parseInt($('versionCode').value,10)||1), versionName:$('versionName').value.trim()||'1.0',
-    orientation:$('orientation').value, mainScript:($('mainScript').value.trim()||'main.hsp'), allFilesAccess:$('allFilesAccess').checked, buildAab:$('buildAab').checked };
+    orientation:$('orientation').value, mainScript:($('mainScript').value.trim()||'main.hsp'), allFilesAccess:$('allFilesAccess').checked, buildAab:$('buildAab').checked, crashLogApk:$('crashLogApk').checked, crashLogAab:$('crashLogAab').checked };
 }
 function adJson(){
   const devs=$('adDevices').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
@@ -639,7 +642,7 @@ $('btnLoadCfg').onclick=async()=>{
       const r=await gh(R()+'/contents/config/'+n+'.json');
       if(!r.ok){ logLine('config/'+n+'.json はまだありません'); continue; }
       const j=await r.json(); const o=JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,'')))));
-      if(n==='app'){ $('packageName').value=o.packageName||''; $('appName').value=o.appName||''; $('versionCode').value=o.versionCode||1; $('versionName').value=o.versionName||'1.0'; $('orientation').value=o.orientation||'portrait'; $('mainScript').value=o.mainScript||'main.hsp'; $('allFilesAccess').checked=!!o.allFilesAccess; $('buildAab').checked=(o.buildAab!==false); }
+      if(n==='app'){ $('packageName').value=o.packageName||''; $('appName').value=o.appName||''; $('versionCode').value=o.versionCode||1; $('versionName').value=o.versionName||'1.0'; $('orientation').value=o.orientation||'portrait'; $('mainScript').value=o.mainScript||'main.hsp'; $('allFilesAccess').checked=!!o.allFilesAccess; $('buildAab').checked=(o.buildAab!==false); $('crashLogApk').checked=(o.crashLogApk!==false); $('crashLogAab').checked=!!o.crashLogAab; }
       else { $('adAppId').value=o.appId||''; $('adReward').value=o.reward||''; $('adDevices').value=(o.testDevices||[]).join('\n'); $('adCooldown').value=o.cooldownMinutes!=null?o.cooldownMinutes:3; $('adDebug').checked=o.debugToast!==false; $('adTesting').checked=o.testing!==false; }
       logLine('読み込み: config/'+n+'.json');
     }
