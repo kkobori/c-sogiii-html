@@ -403,16 +403,32 @@
     if (el.btn) el.btn.style.display = 'none';
     if (el.msg) { el.msg.textContent = msg; el.msg.style.color = '#ff8a8a'; }
     var rb = $('bootReload'); if (rb) rb.style.display = 'inline-block';
-    var bl = $('bootLog'); if (bl) { bl.style.display = 'block'; bl.textContent = LOGS.slice(-25).join('\n'); }
+    var bl = $('bootLog'); if (bl) {
+      bl.style.display = 'block'; bl.textContent = LOGS.slice(-25).join('\n');
+      try { var bt = JSON.parse(localStorage.getItem('hspweb_bktrace') || '[]'); if (bt.length) bl.textContent += '\n--- 前回のバックアップ画面の記録 ---\n' + bt.slice(-12).join('\n'); } catch (e) {}
+    }
   }
   root.addEventListener('error', function (e) { log('[error] ' + (e && e.message) + ' @' + (e && e.filename) + ':' + (e && e.lineno)); });
   root.addEventListener('unhandledrejection', function (e) { log('[reject] ' + errText(e && e.reason)); });
 
+  // JSON取得。1回目: 通常(再確認つき) / 失敗したら 2回目: キャッシュを使わず・別URLで / 3回目: 保存もしない。
+  // 端末内の簡易サーバーなど、キャッシュの「再確認つきリクエスト」に応答できないサーバーでも、2回目以降の起動で止まらないようにする。
+  var JSON_MODES = [['no-cache', ''], ['reload', 'r'], ['no-store', 'n']];
   function fetchJson(url) {
-    return fetch(url, { cache: 'no-cache' }).then(function (r) {
-      if (!r.ok) throw new Error(url + ' HTTP ' + r.status);
-      return r.json();
-    });
+    var errs = [];
+    function attempt(i) {
+      if (i >= JSON_MODES.length) return Promise.reject(new Error(url.split('?')[0] + ' を取得できません: ' + errs.join(' / ')));
+      var m = JSON_MODES[i], u = m[1] ? url + (url.indexOf('?') < 0 ? '?' : '&') + m[1] + '=' + Date.now() : url;
+      return fetch(u, { cache: m[0] }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }).catch(function (e) {
+        var t = '(' + m[0] + ') ' + errText(e); errs.push(t);
+        log('[取得失敗] ' + url.split('?')[0] + ' ' + t);
+        return attempt(i + 1);
+      });
+    }
+    return attempt(0);
   }
   // ファイル取得。1回目: 通常 / 2回目: キャッシュを無視(壊れたキャッシュ対策) / 3回目: 保存もしない
   var FETCH_MODES = [['default', ''], ['reload', '&r='], ['no-store', '&n=']];
