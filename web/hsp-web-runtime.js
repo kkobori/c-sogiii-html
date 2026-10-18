@@ -494,7 +494,14 @@
   /* ---- ユーザー向けバックアップ画面: devcontrol "backup::sog3sd*.dat::", slotmax [, size] ----
      対象はパターンに合うスロットだけ。取り込みは「スロットを選ぶ」方式で、元は .bak に退避し、保存が済んだら自動で再読み込みする。
      画面が開いている間 devcontrol "backup_poll" は 2 を返す(HSP側 backupshowweb が、閉じるまで待つ=一時停止)。 */
-  var bk = { open: false, spec: null, root: null, busy: false, esc: null };
+  var bk = { open: false, spec: null, root: null, busy: false, esc: null, audio: false, polls: 0, trace: [] };
+  // 動きの記録: 画面が固まって再読み込みしても読めるよう、localStorage に1行ずつ同期で保存する(診断パネルの「バックアップの記録」)
+  function bkTrace(msg) {
+    var line = new Date().toLocaleTimeString() + ' ' + msg;
+    bk.trace.push(line); if (bk.trace.length > 40) bk.trace.shift();
+    log('[バックアップ] ' + msg);
+    try { localStorage.setItem('hspweb_bktrace', JSON.stringify(bk.trace)); } catch (e) {}
+  }
   function bkCss() {
     if ($('bkCss')) return;
     var st = document.createElement('style'); st.id = 'bkCss';
@@ -597,24 +604,29 @@
       row.appendChild(nm); row.appendChild(b1); row.appendChild(b2); body.appendChild(row);
     });
   }
-  function bkClose() {
-    if (!bk.open || bk.busy) return;           // 取り込み後の保存待ちの間は閉じない(再読み込みで終わる)
-    bk.open = false; bk.spec = null;
-    if (bk.root) { bk.root.remove(); bk.root = null; }
+  function bkCleanup() {                       // 画面・イベント・音を元に戻す(何度呼んでも安全)
+    bk.open = false; bk.busy = false; bk.spec = null;
+    if (bk.root) { try { bk.root.remove(); } catch (e) {} bk.root = null; }
     if (bk.esc) { document.removeEventListener('keydown', bk.esc, true); bk.esc = null; }
     back.pending = 0;                          // この画面を閉じる操作が、ゲームの「戻る」として伝わらないように
-    audioResumeAfterAd(); if (mml) mml.resumeAfterAd();
-    log('[バックアップ] 画面を閉じました');
+    if (bk.audio) { bk.audio = false; try { audioResumeAfterAd(); if (mml) mml.resumeAfterAd(); } catch (e) { log('[バックアップ] 音の再開で例外: ' + errText(e)); } }
+  }
+  function bkClose() {
+    if (!bk.open || bk.busy) return;           // 取り込み後の保存待ちの間は閉じない(再読み込みで終わる)
+    bkCleanup();
+    bkTrace('画面を閉じました');
   }
   function bkStart(cmd, slotmax, size) {
     var spec = parseBackupSpec(cmd, slotmax, size);
-    if (!spec) { log('[バックアップ] 書き方が不正です cmd=' + cmd + ' slotmax=' + slotmax + ' size=' + size); toast('バックアップの指定が正しくありません'); return -1; }
-    if (!layer) { log('[バックアップ] 保存機能が未準備です'); return -1; }
-    if (bk.open) return 0;
-    bkCss();
-    bk.open = true; bk.busy = false; bk.spec = spec;
-    if (mml) mml.pauseForAd(); audioSuspendForAd();           // 画面が開いている間は音を止める(広告と同じ仕組み)
-    var ov = bkEl('div'); ov.id = 'bk';
+    if (!spec) { bkTrace('書き方が不正です slotmax=' + slotmax + ' size=' + size); toast('バックアップの指定が正しくありません'); return -1; }
+    if (!layer) { bkTrace('保存機能が未準備です'); return -1; }
+    if (bk.open) { bkTrace('すでに開いています'); return 0; }
+    bk.polls = 0;
+    try {
+      bkTrace('画面を作ります');
+      bkCss();
+      bk.open = true; bk.busy = false; bk.spec = spec;
+      var ov = bkEl('div'); ov.id = 'bk';
     var box = bkEl('div', 'bkBox');
     var head = bkEl('div', 'bkHead'); head.appendChild(bkEl('b', null, 'セーブデータのバックアップ'));
     head.appendChild(bkEl('div', 'bkNote', '読み込みのあとは、自動で再読み込みします。'));
@@ -622,21 +634,40 @@
     var bodyEl = bkEl('div', 'bkBody');
     var foot = bkEl('div', 'bkFoot'); var bc = bkEl('button', null, '閉じる'); bc.onclick = bkClose; foot.appendChild(bc);
     box.appendChild(head); box.appendChild(msg); box.appendChild(bodyEl); box.appendChild(foot); ov.appendChild(box);
-    ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'keyup', 'wheel'].forEach(function (ev) {
+    // 押す側(down/start/keydown)だけをゲームに渡さない。離す側(up/end)は渡す(ゲームが「押したまま」と思い込まないため)
+    ['pointerdown', 'mousedown', 'touchstart', 'keydown', 'wheel'].forEach(function (ev) {
       ov.addEventListener(ev, function (e) { e.stopPropagation(); }, { passive: true });
     });
     bk.esc = function (e) { if (e.key === 'Escape') { e.stopPropagation(); bkClose(); } };
     document.addEventListener('keydown', bk.esc, true);
     document.body.appendChild(ov); bk.root = ov;
     bkRender();
-    log('[バックアップ] 画面を開きました pattern=' + spec.pattern + ' slotmax=' + spec.slotmax + ' size=' + spec.size);
+    bkTrace('一覧を描きました');
+    if (mml) mml.pauseForAd(); audioSuspendForAd(); bk.audio = true;      // 画面が開いている間は音を止める(広告と同じ仕組み)
+    bkTrace('画面を開きました pattern=' + spec.pattern + ' slotmax=' + spec.slotmax + ' size=' + spec.size);
     return 0;
+    } catch (e) {
+      bkTrace('画面を開けませんでした: ' + errText(e) + ' @' + String((e && e.stack) || '').split('\n').slice(0, 3).join(' | '));
+      toast('バックアップ画面を開けませんでした');
+      bkCleanup();
+      return -1;
+    }
   }
 
   // devcontrol の橋: "backup::…" / "backup_poll" はバックアップ画面、"AdMob" は広告へ、それ以外(mml_*)はMMLへ
   function hspDev(cmd, a, b, c) {
-    if (typeof cmd === 'string' && cmd.indexOf('backup::') === 0) return bkStart(cmd, a, b);
-    if (cmd === 'backup_poll') return bk.open ? 2 : 0;
+    if (typeof cmd === 'string' && cmd.indexOf('backup::') === 0) {
+      bkTrace('HSPから呼ばれました cmd=' + cmd + ' p1=' + a + ' p2=' + b);
+      var r; try { r = bkStart(cmd, a, b); } catch (e) { bkTrace('例外: ' + errText(e)); try { bkCleanup(); } catch (e2) {} r = -1; }
+      bkTrace('戻り値 ' + r);
+      return r;
+    }
+    if (cmd === 'backup_poll') {
+      bk.polls++;
+      if (bk.polls === 1 || bk.polls % 200 === 0) bkTrace('待機中(poll ' + bk.polls + '回目) 画面=' + (bk.root && bk.root.isConnected ? 'あり' : 'なし'));
+      if (bk.open && !(bk.root && bk.root.isConnected)) { bkTrace('画面が見つからないため、待ちを解きます'); bkCleanup(); }
+      return bk.open ? 2 : 0;
+    }
     if (cmd === 'AdMob') return ad ? ad.devcontrol(cmd, a, b, c) : -1;
     return mml ? mml.devcontrol(cmd, a, b, c) : -1;
   }
@@ -784,6 +815,7 @@
     lines.push('ファイル ' + files.length + '件:');
     files.forEach(function (f) { lines.push('  ' + f.name + '  ' + f.size + 'B  ' + new Date(f.mtime).toLocaleString()); });
     try { var lb = localStorage.getItem('hspweb_lastback'); if (lb) lines.push('戻る操作の最後の記録: ' + lb); } catch (e) {}
+    try { var bt = JSON.parse(localStorage.getItem('hspweb_bktrace') || '[]'); if (bt.length) { lines.push('バックアップ画面の記録(新しい順に最大12行):'); bt.slice(-12).reverse().forEach(function (x) { lines.push('  ' + x); }); } } catch (e) {}
     $('diagInfo').textContent = lines.join('\n');
     renderDiagFiles(files);
     $('diagLog').value = LOGS.slice(-200).join('\n');
