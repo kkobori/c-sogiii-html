@@ -70,3 +70,16 @@ hsp/main.hsp →(web_patch.sh で最小の自動調整)→ 公式 hspcmp → mai
 - `config/gamepad.json` があると、ビルド時に `webconfig.json` の `gamepad` に入り、`web/pad-engine.js` が Gamepad API のボタンを「割り当てた HSP キーコードのキーボードイベント」に変換して流します(公式C++は無改造)。
 - indexMap(物理ボタン番号)があればそれを使い、無ければ標準の並びです。スティックは使いません。画面を離れたときは押しっぱなしを自動で離します。
 - ビルドのログ/注釈に「ゲームパッド設定 (Web)」として割り当て結果が出ます。
+
+## セーブデータのバックアップ画面(ユーザー向け) — devcontrol "backup::…"
+
+Android版と同じ書式・同じ規則(詳細は native 側 README を参照)。
+```
+slotmax=20
+devcontrol "backup::sog3sd*.dat::", slotmax[, size]
+```
+- ゲームを一時停止して画面(`hsp-web-runtime.js`)を出す。`*` = スロット番号(ゼロ埋めなし、`0`〜`slotmax-1`)。パターンに合うスロット以外は、一覧にも出ず読み書きもできない。`.bak` は対象外。
+- 取り込みは「スロットを選ぶ」方式(ファイル名は問わない)。元の内容は `.bak` に退避され、**IndexedDBへの保存を確認してから自動で再読み込み**する。保存を確認できなかったときは再読み込みせず、メッセージを出す(取り込んだ内容を失わないため)。
+- `web_patch.sh` が `devcontrol "backup::` を `backupshowweb`(`web_compat.hsp`)に置き換える。閉じるまで待ち、その間、MMLと公式側の音も一時停止する。
+- 画面が開いている間、ブラウザの「戻る」/ Escape は、ゲームへの「戻る」ではなく画面を閉じる操作になる。
+- 診断パネル(`?diag=1`)の従来のバックアップ機能は、そのまま残る(デバッグ用)。

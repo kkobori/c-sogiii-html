@@ -33,6 +33,11 @@ sed -i -E '/^[[:space:]]*d3wincy=[0-9]+[[:space:]]*$/{N;s/^([[:space:]]*d3wincy=
 #     (広告は第3弾でつなぐ)
 sed -i -E 's/devcontrol[[:space:]]+"AdMob"[[:space:]]*,[[:space:]]*16([^0-9]|$)/admobshow16web\1/' main.hsp
 
+# 4c) devcontrol "refresh" は試し実行(ミニインタプリタ)用。実機・Webでは何もしない命令に置き換える(コメント行は触らない)
+sed -i -E '/^[[:space:]]*;/!s/devcontrol[[:space:]]+"refresh"([^A-Za-z0-9_]|$)/devrefreshnoop\1/I' main.hsp
+# 4d) devcontrol "backup::パターン::",slotmax[,size] はバックアップ画面を出す。閉じるまで待つ(ゲームを一時停止する)ため、待機つきの backupshowweb に置き換える
+#     (本家のまま実行すると、未知のコマンドとして stat=-1 が返るだけ。コメント行は触らない)
+sed -i -E '/^[[:space:]]*;/!s/devcontrol[[:space:]]*"backup::/backupshowweb "backup::/Ig' main.hsp
 # 5) Web用の分岐(case PLATFORM_wwwWEBGL)の最後に、公式Web向けの保存先を上書きで入れる
 #    - 素材は仮想FSの gdata/ (assets.pack から展開)
 #    - セーブは /<保存フォルダ>/ (IDBFSがIndexedDBと同期する場所)
@@ -64,9 +69,11 @@ R2=$(cnt '"::sound::' $O)
 R3=$(cnt '^[[:space:]]*pdcEligible=1([[:space:]]*(;.*)?)$' $O)
 R4=$(cnt ':pmqOk=1([[:space:]]*(;.*)?)$' $O)
 R5=$(cnt 'devcontrol[[:space:]]+"AdMob"[[:space:]]*,[[:space:]]*16([^0-9]|$)' $O)
+R6=$(grep -E '^[[:space:]]*[^;[:space:]]' $O | grep -ciE 'devcontrol[[:space:]]+"refresh"' || true)
+R7=$(grep -E '^[[:space:]]*[^;[:space:]]' $O | grep -ciE 'devcontrol[[:space:]]*"backup::' || true)
 D3=$(grep -B1 -E '^[[:space:]]*d3wincy=' main.hsp | grep -c d3setcam || true)
 DIFFN=$(diff $O main.hsp | grep -c '^>' || true)
-MSG="debugonoff 1→0: ${R1}行%0A::sound:: 取り除き: ${R2}行%0Ammload/mmplay/mmstop/mmvol→x付き: mmloadx=$(grep -cE '(^|:)[[:space:]]*mmloadx' main.hsp) mmplayx=$(grep -cE '(^|:)[[:space:]]*mmplayx' main.hsp) mmstopall=$(grep -cE '(^|:)[[:space:]]*mmstopall' main.hsp)%0ApdcEligible→0: ${R3}行 / pmqOk→0: ${R4}行%0Ad3setcam/d3wincy の順序: 入れ替え後 ${D3} 組%0AAdMob 16→admobshow16web: ${R5}行%0A保存先: /${SAVEDIR}/%0A変わった行の合計: ${DIFFN}"
+MSG="debugonoff 1→0: ${R1}行%0A::sound:: 取り除き: ${R2}行%0Ammload/mmplay/mmstop/mmvol→x付き: mmloadx=$(grep -cE '(^|:)[[:space:]]*mmloadx' main.hsp) mmplayx=$(grep -cE '(^|:)[[:space:]]*mmplayx' main.hsp) mmstopall=$(grep -cE '(^|:)[[:space:]]*mmstopall' main.hsp)%0ApdcEligible→0: ${R3}行 / pmqOk→0: ${R4}行%0Ad3setcam/d3wincy の順序: 入れ替え後 ${D3} 組%0AAdMob 16→admobshow16web: ${R5}行%0Adevcontrol 「refresh」→何もしない: ${R6}行%0Adevcontrol 「backup::」→待機つきバックアップ画面: ${R7}行%0A保存先: /${SAVEDIR}/%0A変わった行の合計: ${DIFFN}"
 echo "::notice title=書き換え結果 (Web版 web_patch)::${MSG}"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then { echo "### 書き換え結果 (Web版)"; echo "- ${MSG//%0A/$'\n'- }"; } >> "$GITHUB_STEP_SUMMARY"; fi
 LEFT=$(grep -nE '(^|[^A-Za-z0-9_"])(mmload|mmplay|mmstop|mmvol)[[:space:]]' main.hsp | grep -v '^[0-9]*:[[:space:]]*;' || true)

@@ -28,6 +28,38 @@
   }
   function errText(e) { return (e && (e.message || e.name)) ? String(e.message || e.name) : String(e); }
 
+  /* ------------------------------------------------------------ バックアップ対象の解釈
+   * devcontrol "backup::sog3sd*.dat::", slotmax [, size]
+   *   * = スロット番号(10進・ゼロ埋めなし・0〜slotmax-1)。英数字・_・-・. とちょうど1個の * だけ使える。
+   *   size が 0 のときはサイズを検査しない。1以上ならその大きさのファイルだけ取り込める。
+   * Android版 BackupSpec.java と同じ規則。変えるときは両方そろえる。 */
+  var BK_MAX_SLOTS = 256, BK_MAX_SIZE = 32 * 1024 * 1024;
+  function parseBackupSpec(cmd, slotmax, size) {
+    if (typeof cmd !== 'string') return null;
+    if (cmd.indexOf('backup::') !== 0 || cmd.slice(-2) !== '::' || cmd.length <= 10) return null;
+    var body = cmd.slice(8, -2);
+    if (!body || body.charAt(0) === '.' || body.indexOf('..') >= 0) return null;
+    if (!/^[A-Za-z0-9_.\-]*\*[A-Za-z0-9_.\-]*$/.test(body)) return null;     // * はちょうど1個
+    var star = body.indexOf('*'), prefix = body.slice(0, star), suffix = body.slice(star + 1);
+    if (prefix.length + suffix.length === 0) return null;
+    slotmax = +slotmax; size = +size || 0;
+    if (!(slotmax === Math.floor(slotmax)) || slotmax < 1 || slotmax > BK_MAX_SLOTS) return null;
+    if (!(size === Math.floor(size)) || size < 0 || size > BK_MAX_SIZE) return null;
+    return {
+      prefix: prefix, suffix: suffix, pattern: prefix + '*' + suffix, slotmax: slotmax, size: size,
+      name: function (i) { return (i >= 0 && i < slotmax && i === Math.floor(i)) ? prefix + i + suffix : null; },
+      slotOf: function (name) {      // 対象外の名前(05 / +5 / .bak つき など)は -1
+        if (typeof name !== 'string' || name.length < prefix.length + suffix.length + 1) return -1;
+        if (name.indexOf(prefix) !== 0 || name.slice(name.length - suffix.length) !== suffix) return -1;
+        var mid = name.slice(prefix.length, name.length - suffix.length);
+        if (!/^(0|[1-9][0-9]{0,2})$/.test(mid)) return -1;
+        var n = parseInt(mid, 10);
+        return n < slotmax ? n : -1;
+      },
+      sizeOk: function (len) { return len > 0 && len <= BK_MAX_SIZE && (size === 0 || len === size); }
+    };
+  }
+
   /* ------------------------------------------------------------ 保存レイヤ */
   /**
    * env: { FS, saveDir('/'なし), log(fn), toast(fn), localStorage, debounceMs, pollMs }
@@ -274,14 +306,71 @@
     }
     function stop() { if (timer) clearTimeout(timer); if (pollTimer) clearInterval(pollTimer); timer = pollTimer = null; }
 
+    /* ---- スロット単位のバックアップ(devcontrol "backup::…") ---- */
+    function slotList(spec) {
+      var have = {}; list().forEach(function (f) { have[f.name] = f; });
+      var out = [];
+      for (var i = 0; i < spec.slotmax; i++) {
+        var nm = spec.name(i), f = have[nm];
+        out.push({ slot: i, name: nm, exists: !!f, size: f ? f.size : 0, mtime: f ? f.mtime : 0 });
+      }
+      return out;
+    }
+    function exportSlot(spec, i) {
+      var nm = spec.name(i);
+      if (!nm) throw new Error('スロットが不正です');
+      return exportFile(nm);
+    }
+    function importSlot(spec, i, bytes) {
+      var nm = spec.name(i);
+      if (!nm) throw new Error('スロットが不正です');
+      if (!spec.sizeOk(bytes.length)) throw new Error('大きさが合いません(' + bytes.length + 'B' + (spec.size ? ' / このゲームのセーブは ' + spec.size + 'B' : '') + ')');
+      return importFile(nm, bytes);
+    }
+    function exportSlotsAll(spec) {
+      var files = {};
+      slotList(spec).forEach(function (x) { if (x.exists) files[x.name] = b64enc(FS.readFile(DIR + '/' + x.name)); });
+      return { format: 'hsp-web-save', version: 1, saveDir: env.saveDir, pattern: spec.pattern, slotmax: spec.slotmax, size: spec.size,
+               created: new Date().toISOString(), files: files };
+    }
+    /** バックアップ(JSON)から、取り込めるものだけを選ぶ(書き込みはしない)。戻り値 { items:[{name,bytes}], skipped } */
+    function planSlotsImport(spec, obj) {
+      if (!obj || obj.format !== 'hsp-web-save' || !obj.files) throw new Error('バックアップファイルの形式が違います');
+      if (obj.pattern && obj.pattern !== spec.pattern) throw new Error('別のデータのバックアップです(' + obj.pattern + ')');
+      var items = [], skipped = 0;
+      Object.keys(obj.files).forEach(function (nm) {
+        if (spec.slotOf(nm) < 0) { skipped++; return; }
+        var b; try { b = b64dec(obj.files[nm]); } catch (e) { skipped++; return; }
+        if (!spec.sizeOk(b.length)) { skipped++; return; }
+        items.push({ name: nm, bytes: b });
+      });
+      return { items: items, skipped: skipped };
+    }
+    function applySlotsImport(items) {
+      items.forEach(function (it) { importFile(it.name, it.bytes); });
+      return items.length;
+    }
+    /** 書き込みがIndexedDBまで届いたら cb(true)。届かないまま ms を過ぎたら cb(false) */
+    function whenSaved(cb, ms) {
+      var t0 = Date.now();
+      flushNow('backup');
+      var iv = setInterval(function () {
+        var idle = st.ready && !st.syncing && !st.pending && !st.dirty && !timer && signature() === st.sig;
+        if (idle) { clearInterval(iv); cb(true); }
+        else if (Date.now() - t0 > (ms || 10000)) { clearInterval(iv); cb(false); }
+      }, 100);
+    }
+
     return {
       install: install, state: st, list: list, signature: signature, flush: flush, flushNow: flushNow,
       exportAll: exportAll, importAll: importAll, exportFile: exportFile, importFile: importFile, restoreFromBak: restoreFromBak, stop: stop, dir: DIR,
+      slotList: slotList, exportSlot: exportSlot, importSlot: importSlot, exportSlotsAll: exportSlotsAll,
+      planSlotsImport: planSlotsImport, applySlotsImport: applySlotsImport, whenSaved: whenSaved,
       _onPopulated: onPopulated
     };
   }
 
-  root.HspWeb = { createSaveLayer: createSaveLayer, b64enc: b64enc, b64dec: b64dec };
+  root.HspWeb = { createSaveLayer: createSaveLayer, b64enc: b64enc, b64dec: b64dec, parseBackupSpec: parseBackupSpec };
   if (root.__HSP_WEB_NOBOOT || typeof document === 'undefined') return;
 
   /* ================================================================ 起動処理(ブラウザ専用) */
@@ -401,8 +490,153 @@
   }
 
   var mml = null, ad = null;
-  // devcontrol の橋: "AdMob" は広告へ、それ以外(mml_*)はMMLへ
+
+  /* ---- ユーザー向けバックアップ画面: devcontrol "backup::sog3sd*.dat::", slotmax [, size] ----
+     対象はパターンに合うスロットだけ。取り込みは「スロットを選ぶ」方式で、元は .bak に退避し、保存が済んだら自動で再読み込みする。
+     画面が開いている間 devcontrol "backup_poll" は 2 を返す(HSP側 backupshowweb が、閉じるまで待つ=一時停止)。 */
+  var bk = { open: false, spec: null, root: null, busy: false, esc: null };
+  function bkCss() {
+    if ($('bkCss')) return;
+    var st = document.createElement('style'); st.id = 'bkCss';
+    st.textContent =
+      '#bk{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px;touch-action:pan-y;-webkit-user-select:none;user-select:none}' +
+      '#bk .bkBox{background:#1a212b;color:#e8edf3;border:1px solid #2c3745;border-radius:12px;width:min(440px,100%);max-height:100%;display:flex;flex-direction:column;overflow:hidden}' +
+      '#bk .bkHead{padding:14px 16px 6px}#bk .bkHead b{font-size:18px}#bk .bkNote{color:#93a1b3;font-size:12px;margin-top:2px}' +
+      '#bk .bkBody{padding:0 16px;overflow:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;touch-action:pan-y}' +
+      '#bk button{padding:10px 12px;border:0;border-radius:8px;background:#2f6fd6;color:#fff;font:inherit;font-size:14px}#bk button:disabled{opacity:.4}' +
+      '#bk .bkBig{display:block;width:100%;margin:8px 0 0}' +
+      '#bk .bkSub{margin:14px 0 4px;color:#93a1b3;font-size:13px}' +
+      '#bk .bkRow{display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #2c3745}' +
+      '#bk .bkName{flex:1 1 auto;font-size:12px;line-height:1.4;word-break:break-all}#bk .bkName.empty{color:#6b7a8c}' +
+      '#bk .bkFoot{padding:10px 16px 14px;border-top:1px solid #2c3745}#bk .bkFoot button{width:100%;background:#3a4656}' +
+      '#bk .bkMsg{padding:8px 16px;font-size:13px;color:#ffb454;display:none}';
+    document.head.appendChild(st);
+  }
+  function bkEl(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function bkMsg(t) { var m = bk.root && bk.root.querySelector('.bkMsg'); if (!m) return; m.textContent = t || ''; m.style.display = t ? 'block' : 'none'; }
+  function bkDownload(blob, name) {
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(function () { a.remove(); URL.revokeObjectURL(a.href); }, 3000);
+  }
+  function bkPick(accept, cb) {      // ファイルを1つ選ばせる
+    var inp = document.createElement('input'); inp.type = 'file'; if (accept) inp.accept = accept; inp.style.display = 'none';
+    inp.onchange = function () { var f = inp.files && inp.files[0]; inp.remove(); if (f) cb(f); };
+    document.body.appendChild(inp); inp.click();
+  }
+  function bkReadFile(f, asText, cb) {
+    var rd = new FileReader();
+    rd.onload = function () { cb(null, asText ? rd.result : new Uint8Array(rd.result)); };
+    rd.onerror = function () { cb(new Error('ファイルを読めません')); };
+    if (asText) rd.readAsText(f); else rd.readAsArrayBuffer(f);
+  }
+  // 取り込んだあと: IndexedDBへの保存が済んだら再読み込み。保存できなかったら再読み込みしない(取り込んだ内容を失わないため)
+  function bkReloadAfterSave() {
+    bk.busy = true; bkRender();
+    bkMsg('取り込みました。保存してから、自動で再読み込みします…');
+    layer.whenSaved(function (ok) {
+      if (ok) { log('[バックアップ] 取り込み後の保存を確認 → 再読み込み'); location.reload(); return; }
+      bk.busy = false; bkRender();
+      bkMsg('保存を確認できませんでした。自動の再読み込みはしません。少し待ってから「閉じる」を押し、ページを再読み込みしてください。');
+    }, 10000);
+  }
+  function bkRender() {
+    if (!bk.root) return;
+    var spec = bk.spec, body = bk.root.querySelector('.bkBody');
+    body.textContent = '';
+    var dis = bk.busy;
+    var bExp = bkEl('button', 'bkBig', '全部まとめて書き出し'); bExp.disabled = dis;
+    bExp.onclick = function () {
+      try {
+        var obj = layer.exportSlotsAll(spec);
+        bkDownload(new Blob([JSON.stringify(obj)], { type: 'application/json' }), cfg.saveDir + '_backup_' + new Date().toISOString().replace(/[:.]/g, '-') + '.json');
+        toast(Object.keys(obj.files).length + 'ファイルを書き出しました');
+      } catch (e) { bkMsg('書き出し失敗: ' + errText(e)); }
+    };
+    var bImp = bkEl('button', 'bkBig', '全部まとめて読み込み'); bImp.disabled = dis;
+    bImp.onclick = function () {
+      bkPick('.json,application/json', function (f) {
+        bkReadFile(f, true, function (err, text) {
+          if (err) return bkMsg(errText(err));
+          var plan;
+          try { plan = layer.planSlotsImport(spec, JSON.parse(text)); } catch (e) { return bkMsg('読み込めません: ' + errText(e)); }
+          if (!plan.items.length) return bkMsg('取り込めるデータがありません' + (plan.skipped ? '(対象外 ' + plan.skipped + '件)' : ''));
+          if (!root.confirm('バックアップの ' + plan.items.length + ' ファイルを読み込みます' + (plan.skipped ? '(対象外の ' + plan.skipped + ' 件は飛ばします)' : '') +
+            '。\n同じスロットの今の内容は .bak に残ります。\n取り込んだあと、自動で再読み込みします。よろしいですか?')) return;
+          try { layer.applySlotsImport(plan.items); } catch (e) { return bkMsg('読み込み失敗: ' + errText(e)); }
+          bkReloadAfterSave();
+        });
+      });
+    };
+    body.appendChild(bExp); body.appendChild(bImp);
+    body.appendChild(bkEl('div', 'bkSub', 'スロット(0〜' + (spec.slotmax - 1) + ')'));
+    var df = function (t) { var d = new Date(t); function z(n) { return (n < 10 ? '0' : '') + n; } return z(d.getMonth() + 1) + '/' + z(d.getDate()) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes()); };
+    layer.slotList(spec).forEach(function (x) {
+      var row = bkEl('div', 'bkRow');
+      var nm = bkEl('div', 'bkName' + (x.exists ? '' : ' empty'), x.name + '\n' + (x.exists ? x.size + 'B  ' + df(x.mtime) : '(空)'));
+      nm.style.whiteSpace = 'pre-line';
+      var b1 = bkEl('button', null, '書き出し'); b1.disabled = dis || !x.exists;
+      b1.onclick = function () {
+        try {
+          var bytes = layer.exportSlot(spec, x.slot);
+          bkDownload(new Blob([bytes], { type: 'application/octet-stream' }), x.name);
+          toast(x.name + ' を書き出しました (' + bytes.length + 'B)');
+        } catch (e) { bkMsg('書き出し失敗: ' + errText(e)); }
+      };
+      var b2 = bkEl('button', null, '読み込み'); b2.disabled = dis;
+      b2.onclick = function () {
+        bkPick('', function (f) {
+          bkReadFile(f, false, function (err, bytes) {
+            if (err) return bkMsg(errText(err));
+            if (!spec.sizeOk(bytes.length)) return bkMsg('このファイルは取り込めません。大きさが合いません: ' + bytes.length + 'B' + (spec.size ? '(このゲームのセーブは ' + spec.size + 'B です)' : ''));
+            if (!root.confirm('スロット ' + x.slot + ' (' + x.name + ') を、「' + f.name + '」の内容で上書きします。\n今の内容は ' + x.name + '.bak に残ります。\n取り込んだあと、自動で再読み込みします。よろしいですか?')) return;
+            try { layer.importSlot(spec, x.slot, bytes); } catch (e) { return bkMsg('読み込み失敗: ' + errText(e)); }
+            bkReloadAfterSave();
+          });
+        });
+      };
+      row.appendChild(nm); row.appendChild(b1); row.appendChild(b2); body.appendChild(row);
+    });
+  }
+  function bkClose() {
+    if (!bk.open || bk.busy) return;           // 取り込み後の保存待ちの間は閉じない(再読み込みで終わる)
+    bk.open = false; bk.spec = null;
+    if (bk.root) { bk.root.remove(); bk.root = null; }
+    if (bk.esc) { document.removeEventListener('keydown', bk.esc, true); bk.esc = null; }
+    back.pending = 0;                          // この画面を閉じる操作が、ゲームの「戻る」として伝わらないように
+    audioResumeAfterAd(); if (mml) mml.resumeAfterAd();
+    log('[バックアップ] 画面を閉じました');
+  }
+  function bkStart(cmd, slotmax, size) {
+    var spec = parseBackupSpec(cmd, slotmax, size);
+    if (!spec) { log('[バックアップ] 書き方が不正です cmd=' + cmd + ' slotmax=' + slotmax + ' size=' + size); toast('バックアップの指定が正しくありません'); return -1; }
+    if (!layer) { log('[バックアップ] 保存機能が未準備です'); return -1; }
+    if (bk.open) return 0;
+    bkCss();
+    bk.open = true; bk.busy = false; bk.spec = spec;
+    if (mml) mml.pauseForAd(); audioSuspendForAd();           // 画面が開いている間は音を止める(広告と同じ仕組み)
+    var ov = bkEl('div'); ov.id = 'bk';
+    var box = bkEl('div', 'bkBox');
+    var head = bkEl('div', 'bkHead'); head.appendChild(bkEl('b', null, 'セーブデータのバックアップ'));
+    head.appendChild(bkEl('div', 'bkNote', '読み込みのあとは、自動で再読み込みします。'));
+    var msg = bkEl('div', 'bkMsg');
+    var bodyEl = bkEl('div', 'bkBody');
+    var foot = bkEl('div', 'bkFoot'); var bc = bkEl('button', null, '閉じる'); bc.onclick = bkClose; foot.appendChild(bc);
+    box.appendChild(head); box.appendChild(msg); box.appendChild(bodyEl); box.appendChild(foot); ov.appendChild(box);
+    ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'keyup', 'wheel'].forEach(function (ev) {
+      ov.addEventListener(ev, function (e) { e.stopPropagation(); }, { passive: true });
+    });
+    bk.esc = function (e) { if (e.key === 'Escape') { e.stopPropagation(); bkClose(); } };
+    document.addEventListener('keydown', bk.esc, true);
+    document.body.appendChild(ov); bk.root = ov;
+    bkRender();
+    log('[バックアップ] 画面を開きました pattern=' + spec.pattern + ' slotmax=' + spec.slotmax + ' size=' + spec.size);
+    return 0;
+  }
+
+  // devcontrol の橋: "backup::…" / "backup_poll" はバックアップ画面、"AdMob" は広告へ、それ以外(mml_*)はMMLへ
   function hspDev(cmd, a, b, c) {
+    if (typeof cmd === 'string' && cmd.indexOf('backup::') === 0) return bkStart(cmd, a, b);
+    if (cmd === 'backup_poll') return bk.open ? 2 : 0;
     if (cmd === 'AdMob') return ad ? ad.devcontrol(cmd, a, b, c) : -1;
     return mml ? mml.devcontrol(cmd, a, b, c) : -1;
   }
@@ -421,7 +655,8 @@
       back.enabled = true;
       backPush(5);       // 戻る用の足場を先に何段か積む(押すたびに1段ずつ消費する)
       root.addEventListener('popstate', function () {
-        back.pending = 1; back.pops++; if (back.depth > 0) back.depth--;
+        if (bk.open) bkClose(); else back.pending = 1;
+        back.pops++; if (back.depth > 0) back.depth--;
         backNote('戻る操作 ' + back.pops + '回目');
         if (back.depth < 1) backPush(3);      // 足場が尽きた時の最後の保険
       });

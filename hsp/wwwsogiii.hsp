@@ -3323,6 +3323,10 @@ return
         nextmode=1022
     }
     if mode=1010 and rmx!-1 and campsely=1:nextmode=1040:sppage=0:chrno=chrsely+8:gosub *sppagemaxget
+    if mode=1010 and rmx!-1 and campsely=2 {
+        slotmax=10
+        devcontrol "backup::sog3sd*.dat::", slotmax, 196608
+    }
     if mode=1010 and rmx!-1 and campsely=3:nextmode=1035:sppage=0:spy=0:chrno=chrsely+8:gosub *sppagemaxget
     if mode=1010 and rmx!-1 and campsely=4:chrno=chrsely+8:nextmode=1185;:sppage=0:chrno=chrsely+8:gosub *sppagemaxget
     if mode=1010 and rmx!-1 and campsely=5:chrno=chrsely+8:nextmode=1050

@@ -44,3 +44,22 @@
 	devcontrol "snd_adresume"
 	return r
 #global
+
+; devcontrol "backup::sog3sd*.dat::",slotmax[,size] の代わり(web_patch.sh が自動で置き換える)。
+; バックアップ画面(JS側)を開き、閉じるまで待つ(その間ゲームは進まない=一時停止)。公式側(mp3/wav)の音も止める。
+; 取り込みが行われたときは、保存が済んだあとページが再読み込みされるので戻らない。
+; stat: 0=閉じた / -1=書き方が不正(画面は出ない)
+#module "webbackup"
+#deffunc backupshowweb str pat, int slotmax, int sz, local r
+	devcontrol "snd_adpause"
+	devcontrol pat, slotmax, sz
+	r=stat
+	if r<0 : devcontrol "snd_adresume" : return r
+	repeat
+		await 50
+		devcontrol "backup_poll"
+		if stat!2 : break
+	loop
+	devcontrol "snd_adresume"
+	return 0
+#global
