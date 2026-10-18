@@ -637,7 +637,7 @@
     if (!spec) { bkTrace('書き方が不正です slotmax=' + slotmax + ' size=' + size); toast('バックアップの指定が正しくありません'); return -1; }
     if (!layer) { bkTrace('保存機能が未準備です'); return -1; }
     if (bk.open) { bkTrace('すでに開いています'); return 0; }
-    bk.polls = 0;
+    bk.polls = 0; bk.winT = 0; bk.winN = 0; bk.spin = false;
     try {
       bkTrace('画面を作ります');
       bkCss();
@@ -680,6 +680,14 @@
     }
     if (cmd === 'backup_poll') {
       bk.polls++;
+      // 待ちが空回りしていないか見張る: HSP側は await 50 で待つので、本来は1秒に20回ほど。100msに30回を超えたら空回り(=ゲームが固まる原因)
+      var nowT = (root.performance && performance.now) ? performance.now() : Date.now();
+      if (!bk.winT || nowT - bk.winT > 100) { bk.winT = nowT; bk.winN = 0; }
+      bk.winN++;
+      if (bk.open && bk.winN > 30) {
+        bkTrace('待ちが空回りしています(100msに' + bk.winN + '回, poll ' + bk.polls + '回目)。待つのをやめて、画面を開いたままゲームを再開します');
+        bk.spin = true; return 0;
+      }
       if (bk.polls === 1 || bk.polls % 200 === 0) bkTrace('待機中(poll ' + bk.polls + '回目) 画面=' + (bk.root && bk.root.isConnected ? 'あり' : 'なし'));
       if (bk.open && !(bk.root && bk.root.isConnected)) { bkTrace('画面が見つからないため、待ちを解きます'); bkCleanup(); }
       return bk.open ? 2 : 0;
